@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="bn">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Servexa — Smart Technician &amp; Home Service Platform</title>
+    <meta name="description" content="যখন কাজ দরকার, Servexa-তে মিস্ত্রি প্রস্তুত। Bangladesh's premier on-demand platform for verified electricians, plumbers, AC technicians, appliance repair, and home services." />
+    <meta name="theme-color" content="#FA4D00" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Servexa" />
+
+    <!-- Favicon & Touch Icons -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="mask-icon" href="/icon.svg" color="#FA4D00" />
+
+    <!-- OpenGraph Social Cards -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Servexa — Smart Technician &amp; Home Service Platform" />
+    <meta property="og:description" content="যখন কাজ দরকার, Servexa-তে মিস্ত্রি প্রস্তুত। Bangladesh's premier on-demand platform for verified electricians, plumbers, AC technicians, appliance repair, and home services." />
+    <meta property="og:site_name" content="Servexa" />
+    <meta property="og:image" content="/pwa-512x512.png" />
+
+    <!-- Twitter Cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Servexa — Smart Technician &amp; Home Service Platform" />
+    <meta name="twitter:description" content="যখন কাজ দরকার, Servexa-তে মিস্ত্রি প্রস্তুত। Bangladesh's premier on-demand platform for verified electricians, plumbers, AC technicians, appliance repair, and home services." />
+    <meta name="twitter:image" content="/pwa-512x512.png" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <!-- Theme Inline Script -->
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem('kormigo_theme');
+          var isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans antialiased selection:bg-orange-500 selection:text-white transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

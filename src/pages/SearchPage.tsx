@@ -1,0 +1,190 @@
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Search, Sparkles, MapPin, Star, Wrench, User } from 'lucide-react';
+import { useApp } from '../contexts/AppContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import { diagnoseProblemWithRules } from '../services/problemDiagnosis';
+
+export const SearchPage: React.FC = () => {
+  const { categories, technicians } = useApp();
+  const { t, isBangla } = useLanguage();
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+
+  const diagnosis = query.trim().length > 3 ? diagnoseProblemWithRules(query, categories) : null;
+
+  const matchedTechs = technicians.filter(
+    (tech) =>
+      (tech.skillVerified || tech.platformVerified) &&
+      (tech.name.toLowerCase().includes(query.toLowerCase()) ||
+        (tech.district || '').toLowerCase().includes(query.toLowerCase()) ||
+        tech.primaryArea.toLowerCase().includes(query.toLowerCase()) ||
+        tech.serviceAreas.some(a => a.toLowerCase() === query.toLowerCase()) ||
+        tech.skills.some(s => s.toLowerCase().includes(query.toLowerCase())))
+  );
+
+  const matchedCategories = categories.filter(
+    (c) =>
+      c.nameEn.toLowerCase().includes(query.toLowerCase()) ||
+      c.nameBn.includes(query) ||
+      c.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()))
+  );
+
+  return (
+    <div className="py-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      {/* Search Header */}
+      <div className="text-center space-y-2">
+        <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white tracking-tight">
+          {isBangla ? 'গ্লোবাল সার্চ ও স্মার্ট অ্যাসিস্ট্যান্ট' : 'Global Search & Smart Assistant'}
+        </h1>
+        <p className="text-xs sm:text-sm text-zinc-500">
+          {isBangla ? 'সার্ভিস, এলাকার নাম, বা আপনার সমস্যার কথা বাংলায় বা ইংরেজিতে লিখুন' : 'Search by problem, service name, technician or Dhaka neighborhood'}
+        </p>
+      </div>
+
+      {/* Main Search Bar */}
+      <div className="relative max-w-2xl mx-auto">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-orange-500" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t.search.searchPlaceholder}
+          className="w-full pl-12 pr-4 py-3.5 text-sm rounded-2xl border-2 border-orange-500/40 focus:border-orange-500 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-md focus:outline-none"
+        />
+      </div>
+
+      {/* Quick Search Tags */}
+      <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+        <span className="text-zinc-400">{isBangla ? 'জনপ্রিয় খোঁজ:' : 'Popular Searches:'}</span>
+        {(isBangla
+          ? ['মিরপুর ইলেকট্রিশিয়ান', 'পানির পাইপ লিক', 'এসি গ্যাস রিফিল', 'তালা আটকে গেছে', 'ধানমন্ডি প্লাম্বার']
+          : ['Mirpur Electrician', 'Water Pipe Leak', 'AC Gas Refill', 'Door Lock Jammed', 'Dhanmondi Plumber']
+        ).map((tag) => (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => setQuery(tag)}
+            className="px-3 py-1 rounded-full bg-stone-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-orange-500 border border-transparent transition-colors cursor-pointer"
+          >
+            {tag}
+          </button>
+        ))}
+      </div>
+
+      {/* Natural Language Diagnosis Card */}
+      {diagnosis && (
+        <div className="p-5 rounded-2xl bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 dark:text-orange-400">
+              <Sparkles className="w-4 h-4" />
+              <span>
+                {isBangla
+                  ? `শনাক্তকৃত সমাধান: ${diagnosis.categoryNameBn} (${diagnosis.confidence}% ম্যাচ)`
+                  : `Detected Match: ${diagnosis.categoryNameEn} (${diagnosis.confidence}% match)`}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+              {isBangla ? diagnosis.reasoningBn : diagnosis.reasoningEn}
+            </p>
+          </div>
+          <Link
+            to={`/book?categoryId=${diagnosis.categoryId}&desc=${encodeURIComponent(query)}`}
+            className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shrink-0 text-center"
+          >
+            {isBangla ? 'সরাসরি বুকিং শুরু করুন' : 'Start Direct Booking'}
+          </Link>
+        </div>
+      )}
+
+      {/* Matched Categories */}
+      {matchedCategories.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+            {isBangla ? `মিলে যাওয়া সার্ভিস (${matchedCategories.length})` : `Matched Services (${matchedCategories.length})`}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {matchedCategories.map((c) => (
+              <Link
+                key={c.id}
+                to={`/professionals?category=${c.id}`}
+                className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-orange-500 transition-colors flex items-center gap-3"
+              >
+                <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-orange-600 flex items-center justify-center shrink-0">
+                  <Wrench className="w-4 h-4" />
+                </div>
+                <div className="truncate">
+                  <div className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate">
+                    {isBangla ? c.nameBn : c.nameEn}
+                  </div>
+                  <div className="text-[10px] text-zinc-400">
+                    {isBangla ? `৳${c.startingPrice} থেকে` : `From ৳${c.startingPrice}`}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Matched Technicians */}
+      {matchedTechs.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+            {isBangla ? `উপযুক্ত টেকনিশিয়ান (${matchedTechs.length})` : `Matched Technicians (${matchedTechs.length})`}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {matchedTechs.map((tech) => (
+              <div
+                key={tech.id}
+                onClick={() => navigate(`/professionals/${tech.id}`)}
+                className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-orange-500/60 hover:shadow-lg transition-all duration-200 flex flex-col justify-between cursor-pointer group"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <img
+                    src={tech.avatar}
+                    alt={tech.name}
+                    className="w-13 h-13 rounded-full object-cover ring-2 ring-orange-500/20 group-hover:ring-orange-500 transition-all shadow-sm"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 group-hover:text-orange-600 transition-colors truncate">
+                      {tech.name}
+                    </h3>
+                    <div className="flex items-center gap-1 text-[11px] text-amber-500 font-bold">
+                      <Star className="w-3 h-3 fill-amber-400" />
+                      <span>{tech.rating}</span>
+                      <span className="text-zinc-400 font-normal">
+                        ({tech.completedJobs} {isBangla ? 'কাজ' : 'jobs'})
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-zinc-400 flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3 h-3 text-orange-500" />
+                      <span className="truncate">{tech.primaryArea}, {tech.district || tech.city}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mt-1" onClick={(e) => e.stopPropagation()}>
+                  <Link
+                    to={`/book?techId=${tech.id}`}
+                    className="py-1.5 text-center text-xs font-bold rounded-xl bg-orange-600 hover:bg-orange-500 text-white transition-colors"
+                  >
+                    {t.actions.bookNow}
+                  </Link>
+                  <Link
+                    to={`/professionals/${tech.id}`}
+                    className="py-1.5 text-center text-xs font-semibold rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1"
+                  >
+                    <User className="w-3 h-3" />
+                    <span>{isBangla ? 'প্রোফাইল' : 'Profile'}</span>
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
