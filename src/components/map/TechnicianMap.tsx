@@ -13,7 +13,8 @@ import {
   ArrowRight,
   ZoomIn,
   ZoomOut,
-  MapPin
+  MapPin,
+  Loader2
 } from 'lucide-react';
 import { Technician } from '../../types';
 import { useApp } from '../../contexts/AppContext';
@@ -35,6 +36,13 @@ import {
   attachMapResizeObserver
 } from '../../utils/geoUtils';
 import { createResilientTileLayer, MapTileStyle } from '../../utils/mapTiles';
+import {
+  GeoSearchResult,
+  findExactLocalLocation,
+  geocodeBangladeshLocation,
+  getLocalLocationSuggestions,
+  searchNominatimBangladesh
+} from '../../utils/geoSearch';
 
 export interface TechnicianMapProps {
   mode?: 'standalone' | 'embedded';
@@ -91,6 +99,8 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
   const overlayLayerRef = useRef<L.LayerGroup | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMountedCameraRef = useRef(false);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
+  const searchRequestSeqRef = useRef(0);
 
   // State
   const [mapMode, setMapMode] = useState<MapMode>('PROS');
@@ -125,7 +135,12 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
     lng: DHAKA_CENTER.lng
   });
   const [zoomLevel, setZoomLevel] = useState<number>(12);
+  const [flySeq, setFlySeq] = useState<number>(0);
   const [searchedLocationPin, setSearchedLocationPin] = useState<{ lat: number; lng: number; name: string } | null>(null);
+  const [locationSearchActive, setLocationSearchActive] = useState<boolean>(false);
+  const [isSearchingLocation, setIsSearchingLocation] = useState<boolean>(false);
+  const [suggestions, setSuggestions] = useState<GeoSearchResult[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [, setDetectedCategory] = useState<string | null>(null);
 
   // Sync external selection if prop changes
@@ -208,123 +223,207 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
     }
   }, [searchQuery]);
 
-  const handleLocationOrServiceSearch = (rawQuery?: string) => {
-    const raw = rawQuery !== undefined ? rawQuery : searchQuery;
-    const q = raw.toLowerCase().trim();
+  // Close suggestions dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Live location suggestions (instant local + debounced Nominatim)
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const localHits = getLocalLocationSuggestions(q, isBangla, 5);
+    setSuggestions(localHits);
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      const remoteHits = await searchNominatimBangladesh(q, isBangla, controller.signal);
+      if (controller.signal.aborted) return;
+      if (remoteHits.length > 0) {
+        const merged: GeoSearchResult[] = [...localHits];
+        for (const r of remoteHits) {
+          const dup = merged.some(
+            (m) => Math.abs(m.lat - r.lat) < 0.003 && Math.abs(m.lng - r.lng) < 0.003
+          );
+          if (!dup) merged.push(r);
+        }
+        setSuggestions(merged.slice(0, 6));
+      }
+    }, 320);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [searchQuery, isBangla]);
+
+  const applyGeoSearchResult = (res: GeoSearchResult) => {
+    const targetZoom = res.zoom || 14;
+    setMapCenter({ lat: res.lat, lng: res.lng });
+    setZoomLevel(targetZoom);
+    setFlySeq((s) => s + 1);
+    setSearchedLocationPin({
+      lat: res.lat,
+      lng: res.lng,
+      name: res.name
+    });
+    setLocationSearchActive(true);
+    setShowSuggestions(false);
+    safeFlyOrSetView(mapInstanceRef.current, res.lat, res.lng, targetZoom, { duration: 0.7 });
+    setLocationToast({
+      message: isBangla
+        ? `📍 ${res.name} এলাকায় ম্যাপ ও লোকেশন আইকন নিয়ে যাওয়া হয়েছে`
+        : `📍 Moved map & location pin to ${res.name}`,
+      type: 'success'
+    });
+  };
+
+  const handleLocationOrServiceSearch = async (rawQuery?: string, presetResult?: GeoSearchResult) => {
+    if (presetResult) {
+      setSearchQuery(presetResult.name);
+      applyGeoSearchResult(presetResult);
+      return;
+    }
+
+    const raw = (rawQuery !== undefined ? rawQuery : searchQuery).trim();
+    const q = raw.toLowerCase();
     const cleanQ = q.replace(/[-_,./]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!cleanQ) {
       setLocationToast({
-        message: isBangla ? 'অনুগ্রহ করে সার্ভিস বা ঢাকার এলাকার নাম লিখুন!' : 'Please enter a service or Dhaka area name!',
+        message: isBangla ? 'অনুগ্রহ করে যেকোনো এলাকার বা লোকেশনের নাম লিখুন!' : 'Please enter any area or location name!',
         type: 'info'
       });
       return;
     }
 
-    const matchedLoc = DHAKA_LOCATIONS.find((loc) => {
-      const bnMatch = loc.nameBn.includes(cleanQ) || cleanQ.includes(loc.nameBn);
-      const enMatch = loc.nameEn.toLowerCase().includes(cleanQ) || cleanQ.includes(loc.nameEn.toLowerCase());
-      const kwMatch = loc.keywords.some((k) => {
-        const cleanK = k.toLowerCase().replace(/[-_,./]/g, ' ').trim();
-        return cleanQ.includes(cleanK) || cleanK.includes(cleanQ);
-      });
-      return bnMatch || enMatch || kwMatch;
-    });
+    setShowSuggestions(false);
 
-    if (matchedLoc) {
-      setMapCenter({ lat: matchedLoc.lat, lng: matchedLoc.lng });
-      setZoomLevel(matchedLoc.zoom || 14);
-      setSearchedLocationPin({
-        lat: matchedLoc.lat,
-        lng: matchedLoc.lng,
-        name: isBangla ? matchedLoc.nameBn : matchedLoc.nameEn
-      });
-      setLocationToast({
-        message: isBangla
-          ? `📍 ${matchedLoc.nameBn} এলাকায় ম্যাপ এবং লোকেশন আইকন মুভ করা হয়েছে!`
-          : `📍 Map and location pin moved to ${matchedLoc.nameEn}!`,
-        type: 'success'
-      });
+    // 1. Instant local exact match (extended Dhaka areas, zones, 64 districts)
+    const exactLocal = findExactLocalLocation(raw, isBangla);
+    if (exactLocal) {
+      applyGeoSearchResult(exactLocal);
       return;
     }
 
-    const matchedZone = DHAKA_HEATMAP_ZONES.find(
-      (z) =>
-        z.nameEn.toLowerCase().includes(cleanQ) ||
-        z.nameBn.includes(cleanQ) ||
-        cleanQ.includes(z.nameEn.toLowerCase()) ||
-        cleanQ.includes(z.nameBn)
+    // 2. Direct technician name match
+    const matchedTechByName = technicians.find(
+      (t) => t.name.toLowerCase().includes(cleanQ)
     );
-
-    if (matchedZone) {
-      setMapCenter({ lat: matchedZone.lat, lng: matchedZone.lng });
-      setZoomLevel(14);
-      setSearchedLocationPin({
-        lat: matchedZone.lat,
-        lng: matchedZone.lng,
-        name: isBangla ? matchedZone.nameBn : matchedZone.nameEn
-      });
-      setLocationToast({
-        message: isBangla
-          ? `📍 ${matchedZone.nameBn} এলাকায় ম্যাপ মুভ করা হয়েছে!`
-          : `📍 Map moved to ${matchedZone.nameEn}!`,
-        type: 'success'
-      });
-      return;
-    }
-
-    const matchedTech = technicians.find(
-      (t) =>
-        t.name.toLowerCase().includes(cleanQ) ||
-        t.primaryArea.toLowerCase().includes(cleanQ) ||
-        t.serviceAreas.some((a) => a.toLowerCase().includes(cleanQ))
-    );
-
-    if (matchedTech && matchedTech.latitude && matchedTech.longitude) {
-      setMapCenter({ lat: matchedTech.latitude, lng: matchedTech.longitude });
+    if (matchedTechByName && matchedTechByName.latitude && matchedTechByName.longitude) {
+      setMapCenter({ lat: matchedTechByName.latitude, lng: matchedTechByName.longitude });
       setZoomLevel(15);
-      setSelectedTechId(matchedTech.id);
-      setActivePopupTechId(matchedTech.id);
+      setFlySeq((s) => s + 1);
+      setSelectedTechId(matchedTechByName.id);
+      setActivePopupTechId(matchedTechByName.id);
+      setLocationSearchActive(false);
       setSearchedLocationPin({
-        lat: matchedTech.latitude,
-        lng: matchedTech.longitude,
-        name: `${matchedTech.name} (${matchedTech.primaryArea})`
+        lat: matchedTechByName.latitude,
+        lng: matchedTechByName.longitude,
+        name: `${matchedTechByName.name} (${matchedTechByName.primaryArea})`
       });
+      safeFlyOrSetView(mapInstanceRef.current, matchedTechByName.latitude, matchedTechByName.longitude, 15, { duration: 0.7 });
       setLocationToast({
         message: isBangla
-          ? `👨‍🔧 ${matchedTech.name} (${matchedTech.primaryArea}) এর লোকেশনে পিন মুভ করা হয়েছে`
-          : `👨‍🔧 Pinned at ${matchedTech.name} (${matchedTech.primaryArea})`,
+          ? `👨‍🔧 ${matchedTechByName.name} (${matchedTechByName.primaryArea}) এর লোকেশনে পিন মুভ করা হয়েছে`
+          : `👨‍🔧 Pinned at ${matchedTechByName.name} (${matchedTechByName.primaryArea})`,
         type: 'success'
       });
       return;
     }
 
-    const detected = detectServiceCategoryFromQuery(q);
-    if (detected && detected !== 'other_services') {
-      setSelectedCategory(detected);
-      const categoryPros = technicians.filter((t) => t.skills.includes(detected));
-      if (categoryPros.length > 0) {
-        setMapCenter({
-          lat: categoryPros[0].latitude || DHAKA_CENTER.lat,
-          lng: categoryPros[0].longitude || DHAKA_CENTER.lng
-        });
+    // 3. Check if explicitly a pure service keyword (with no location markers)
+    const hasPlaceCue = /(road|রোড|street|স্ট্রিট|lane|লেন|sector|সেক্টর|block|ব্লক|bazar|বাজার|more|মোড়|মোড়|gate|গেট|para|পাড়া|পাড়া|pur|পুর|nagar|নগর|ganj|গঞ্জ|thana|থানা|district|জেলা|upazila|উপজেলা|moholla|মহল্লা|house|বাড়ি|বাড়ি|dhaka|ঢাকা)/i.test(cleanQ);
+    const detectedCat = detectServiceCategoryFromQuery(q);
+    const isShortPureService =
+      !hasPlaceCue &&
+      detectedCat !== null &&
+      detectedCat !== 'other_services' &&
+      cleanQ.split(' ').length <= 2;
+
+    if (isShortPureService && detectedCat) {
+      setSelectedCategory(detectedCat);
+      setLocationSearchActive(false);
+      const categoryPros = technicians.filter((t) => t.skills.includes(detectedCat));
+      if (categoryPros.length > 0 && isValidLatLng(categoryPros[0].latitude, categoryPros[0].longitude)) {
+        const lat = categoryPros[0].latitude as number;
+        const lng = categoryPros[0].longitude as number;
+        setMapCenter({ lat, lng });
         setZoomLevel(13);
+        setFlySeq((s) => s + 1);
+        safeFlyOrSetView(mapInstanceRef.current, lat, lng, 13, { duration: 0.65 });
+      }
+      setLocationToast({
+        message: isBangla ? 'সার্ভিস ক্যাটাগরি অনুযায়ী ম্যাপ ফিল্টার করা হয়েছে' : 'Filtered map by service category',
+        type: 'success'
+      });
+      return;
+    }
+
+    // 4. Full Bangladesh geocoding via OpenStreetMap Nominatim + fuzzy BD fallback
+    const reqId = ++searchRequestSeqRef.current;
+    setIsSearchingLocation(true);
+    try {
+      const geoResult = await geocodeBangladeshLocation(raw, isBangla);
+      if (reqId !== searchRequestSeqRef.current) return;
+
+      if (geoResult) {
+        applyGeoSearchResult(geoResult);
+        return;
+      }
+
+      // 5. Fallback: check technician area text or category keyword
+      const matchedTechByArea = technicians.find(
+        (t) =>
+          t.primaryArea.toLowerCase().includes(cleanQ) ||
+          t.serviceAreas.some((a) => a.toLowerCase().includes(cleanQ))
+      );
+      if (matchedTechByArea && matchedTechByArea.latitude && matchedTechByArea.longitude) {
+        applyGeoSearchResult({
+          lat: matchedTechByArea.latitude,
+          lng: matchedTechByArea.longitude,
+          name: matchedTechByArea.primaryArea || raw,
+          zoom: 14,
+          source: 'local'
+        });
+        return;
+      }
+
+      if (detectedCat && detectedCat !== 'other_services') {
+        setSelectedCategory(detectedCat);
+        setLocationSearchActive(false);
         setLocationToast({
-          message: isBangla ? 'ক্যাটাগরি অনুযায়ী নিকটস্থ টেকনিশিয়ান প্রদর্শিত হচ্ছে' : 'Showing nearest technicians for category',
+          message: isBangla ? 'ক্যাটাগরি অনুযায়ী ম্যাপ ফিল্টার করা হয়েছে' : 'Filtered map by category',
           type: 'success'
         });
         return;
       }
-    }
 
-    setLocationToast({
-      message: isBangla ? 'সার্চ অনুযায়ী ম্যাপ ফিল্টার করা হয়েছে' : 'Filtered map based on your search',
-      type: 'info'
-    });
+      setLocationToast({
+        message: isBangla
+          ? `"${raw}" লোকেশনটি খুঁজে পাওয়া যায়নি। এলাকার নাম স্পষ্টভাবে লিখুন।`
+          : `Could not locate "${raw}". Try specifying the area or district name.`,
+        type: 'error'
+      });
+    } finally {
+      if (reqId === searchRequestSeqRef.current) {
+        setIsSearchingLocation(false);
+      }
+    }
   };
 
   const filteredTechnicians = useMemo(() => {
-    const centerLat = userLocation?.lat || DHAKA_CENTER.lat;
-    const centerLng = userLocation?.lng || DHAKA_CENTER.lng;
+    const centerLat = searchedLocationPin?.lat || userLocation?.lat || DHAKA_CENTER.lat;
+    const centerLng = searchedLocationPin?.lng || userLocation?.lng || DHAKA_CENTER.lng;
 
     return technicians
       .map((tech) => {
@@ -343,24 +442,22 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
       })
       .filter((tech) => {
         if (selectedCategory !== 'all' && !tech.skills.includes(selectedCategory)) return false;
-        if (distanceRadiusKm < 50 && tech.calculatedDistanceKm > distanceRadiusKm) return false;
+        if (!locationSearchActive && distanceRadiusKm < 50 && tech.calculatedDistanceKm > distanceRadiusKm) return false;
         if (availabilityFilter === 'available' && tech.availability !== 'available') return false;
         if (availabilityFilter === 'busy' && tech.availability !== 'busy') return false;
         if (availabilityFilter === 'emergency' && !tech.emergencyAvailable) return false;
         if (minRating > 0 && tech.rating < minRating) return false;
         if (tech.startingPrice > maxPrice) return false;
 
-        if (searchQuery.trim()) {
+        if (searchQuery.trim() && !locationSearchActive) {
           const q = searchQuery.toLowerCase().trim();
           const nameMatches = tech.name.toLowerCase().includes(q);
           const areaMatches =
             tech.primaryArea.toLowerCase().includes(q) || tech.serviceAreas.some((a) => a.toLowerCase().includes(q));
           const bioMatches = tech.bioEn.toLowerCase().includes(q) || tech.bioBn.includes(q);
           const skillMatches = tech.skills.some((s) => s.toLowerCase().includes(q));
-          const isDhakaLoc = DHAKA_LOCATIONS.some(
-            (l) => l.nameBn === searchQuery.trim() || l.nameEn.toLowerCase() === q
-          );
-          if (!isDhakaLoc && !nameMatches && !areaMatches && !bioMatches && !skillMatches) {
+          const isKnownLoc = !!findExactLocalLocation(searchQuery, isBangla);
+          if (!isKnownLoc && !nameMatches && !areaMatches && !bioMatches && !skillMatches) {
             return false;
           }
         }
@@ -379,7 +476,20 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
         }
         return 0;
       });
-  }, [technicians, userLocation, selectedCategory, distanceRadiusKm, availabilityFilter, minRating, maxPrice, searchQuery, sortBy, isBangla]);
+  }, [
+    technicians,
+    userLocation,
+    searchedLocationPin,
+    locationSearchActive,
+    selectedCategory,
+    distanceRadiusKm,
+    availabilityFilter,
+    minRating,
+    maxPrice,
+    searchQuery,
+    sortBy,
+    isBangla
+  ]);
 
   const heatmapClusters = useMemo(() => {
     const areaClusters: Record<string, { lat: number; lng: number; count: number; name: string }> = {};
@@ -448,6 +558,9 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
     setSortBy('recommended');
     setDetectedCategory(null);
     setSearchedLocationPin(null);
+    setLocationSearchActive(false);
+    setSuggestions([]);
+    setShowSuggestions(false);
   };
 
   // Initialize Leaflet Map once
@@ -457,7 +570,7 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
     const map = L.map(mapContainerRef.current, {
       center: [DHAKA_CENTER.lat, DHAKA_CENTER.lng],
       zoom: 12,
-      minZoom: 10,
+      minZoom: 6,
       maxZoom: 18,
       zoomControl: false,
       attributionControl: false
@@ -508,7 +621,7 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
       return;
     }
     safeFlyOrSetView(map, mapCenter.lat, mapCenter.lng, zoomLevel, { duration: 0.65 });
-  }, [mapCenter.lat, mapCenter.lng, zoomLevel]);
+  }, [mapCenter.lat, mapCenter.lng, zoomLevel, flySeq]);
 
   // Render Leaflet overlays (User Pin, Search Pin, Pros or Heatmap Clusters)
   useEffect(() => {
@@ -553,15 +666,21 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
 
     // Searched Location Pin
     if (searchedLocationPin && isValidLatLng(searchedLocationPin.lat, searchedLocationPin.lng)) {
+      const safePinName = searchedLocationPin.name
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
       const pinHtml = `
-        <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);pointer-events:none;">
-          <div style="margin-bottom:4px;padding:4px 10px;border-radius:9999px;background:#09090b;color:#ffffff;border:2px solid #f97316;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,0.5);">
-            📍 ${searchedLocationPin.name}
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);pointer-events:none;">
+          <div style="margin-bottom:5px;padding:4px 11px;border-radius:9999px;background:#09090b;color:#ffffff;border:2px solid #f97316;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 8px 22px rgba(0,0,0,0.5);">
+            📍 ${safePinName}
           </div>
-          <div style="width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#ea580c,#f59e0b);color:#ffffff;display:flex;align-items:center;justify-content:center;border:2px solid #ffffff;box-shadow:0 8px 20px rgba(0,0,0,0.4);font-size:16px;">
-            ★
+          <div style="position:relative;display:flex;align-items:center;justify-content:center;">
+            <span style="position:absolute;width:46px;height:46px;border-radius:9999px;background:rgba(249,115,22,0.28);animation:ping 1.6s cubic-bezier(0,0,0.2,1) infinite;"></span>
+            <div style="position:relative;width:36px;height:36px;border-radius:9999px 9999px 9999px 4px;transform:rotate(-45deg);background:linear-gradient(135deg,#f97316,#dc2626);color:#ffffff;display:flex;align-items:center;justify-content:center;border:2.5px solid #ffffff;box-shadow:0 10px 24px rgba(234,88,12,0.55);">
+              <span style="transform:rotate(45deg);width:10px;height:10px;border-radius:9999px;background:#ffffff;display:block;"></span>
+            </div>
           </div>
-          <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #ea580c;"></div>
         </div>
       `;
       L.marker([searchedLocationPin.lat, searchedLocationPin.lng], {
@@ -571,7 +690,7 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
           iconSize: [0, 0],
           iconAnchor: [0, 0]
         }),
-        zIndexOffset: 2500
+        zIndexOffset: 3800
       }).addTo(overlayGroup);
     }
 
@@ -774,7 +893,7 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
       <div className="bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 px-3 sm:px-4 py-2.5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           {/* Smart Problem & Location Search Input */}
-          <div className="relative flex-1 min-w-[260px] max-w-xl flex items-center gap-1.5">
+          <div ref={searchBoxRef} className="relative flex-1 min-w-[260px] max-w-xl flex items-center gap-1.5 z-30">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -785,47 +904,104 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
               <button
                 type="button"
                 onClick={() => handleLocationOrServiceSearch()}
-                title={isBangla ? 'সার্চ করুন বা এলাকায় যান' : 'Search or Fly to Location'}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-orange-500 hover:text-orange-600 transition-colors cursor-pointer p-0.5"
+                disabled={isSearchingLocation}
+                title={isBangla ? 'সার্চ করুন বা এলাকায় যান' : 'Search or Fly to Location'}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-orange-500 hover:text-orange-600 transition-colors cursor-pointer p-0.5 disabled:opacity-60"
               >
-                <Search className="w-3.5 h-3.5" />
+                {isSearchingLocation ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Search className="w-3.5 h-3.5" />
+                )}
               </button>
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestions(true);
+                }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchQuery(val);
+                  setShowSuggestions(val.trim().length >= 2);
+                  if (!val.trim()) {
+                    setLocationSearchActive(false);
+                    setSearchedLocationPin(null);
+                  } else {
+                    setLocationSearchActive(false);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     handleLocationOrServiceSearch();
+                  } else if (e.key === 'Escape') {
+                    setShowSuggestions(false);
                   }
                 }}
                 placeholder={
                   isBangla
-                    ? 'কী সেবা বা ঢাকার এলাকা? যেমন: মিরপুর, ধানমন্ডি, এসি...'
-                    : 'Service or Dhaka Area? e.g. Mirpur, Dhanmondi, AC...'
+                    ? 'যেকোনো এলাকা বা লোকেশন লিখুন (যেমন: যাত্রাবাড়ী, চট্টগ্রাম, সাভার...)'
+                    : 'Any area or location (e.g. Jatrabari, Savar, Chattogram...)'
                 }
                 className="w-full pl-8 pr-7 py-1.5 sm:py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-medium"
               />
               {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchedLocationPin(null);
+                    setLocationSearchActive(false);
+                    setSuggestions([]);
+                    setShowSuggestions(false);
+                  }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 text-xs px-1 cursor-pointer"
                 >
                   ✕
                 </button>
               )}
+
+              {/* Location Autocomplete Dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-2xl overflow-hidden z-50 divide-y divide-zinc-100 dark:divide-zinc-800 max-h-60 overflow-y-auto">
+                  {suggestions.map((item, idx) => (
+                    <button
+                      key={`${item.lat}-${item.lng}-${idx}`}
+                      type="button"
+                      onClick={() => handleLocationOrServiceSearch(item.name, item)}
+                      className="w-full px-3 py-2 text-left hover:bg-orange-50 dark:hover:bg-zinc-800/80 flex items-center gap-2.5 text-xs transition-colors cursor-pointer"
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                          {item.name}
+                        </div>
+                        {item.displayName && (
+                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
+                            {item.displayName}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </form>
 
             <button
               type="button"
+              disabled={isSearchingLocation}
               onClick={() => handleLocationOrServiceSearch()}
               title={isBangla ? 'লোকেশন বা সেবা খুঁজুন' : 'Search Location or Service'}
-              className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20 cursor-pointer active:scale-95 transition-all shrink-0"
+              className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20 cursor-pointer active:scale-95 transition-all shrink-0 disabled:opacity-70"
             >
-              <Search className="w-3.5 h-3.5" />
-              <span>{isBangla ? 'সার্চ' : 'Search'}</span>
+              {isSearchingLocation ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Search className="w-3.5 h-3.5" />
+              )}
+              <span>{isSearchingLocation ? (isBangla ? 'খুঁজছে...' : 'Finding...') : isBangla ? 'সার্চ' : 'Search'}</span>
             </button>
           </div>
 

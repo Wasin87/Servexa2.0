@@ -35,6 +35,8 @@ interface RealLeafletMapProps {
   activeMode: 'DEMAND_INTENSITY' | 'PRO_DENSITY' | 'EMERGENCY_HOTSPOTS';
   userLocation?: { lat: number; lng: number } | null;
   flyToUserSeq?: number;
+  searchedLocation?: { lat: number; lng: number; name: string; zoom?: number } | null;
+  flyToSearchSeq?: number;
   className?: string;
 }
 
@@ -45,6 +47,8 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
   activeMode,
   userLocation = null,
   flyToUserSeq = 0,
+  searchedLocation = null,
+  flyToSearchSeq = 0,
   className = '',
 }) => {
   const { theme } = useTheme();
@@ -144,7 +148,7 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
     const map = L.map(mapContainerRef.current, {
       center: [initialLat, initialLng],
       zoom: selectedZone ? 13 : 12,
-      minZoom: 10,
+      minZoom: 6,
       maxZoom: 18,
       zoomControl: false,
       attributionControl: false,
@@ -204,6 +208,15 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
     }
     safeFlyOrSetView(map, userLocation.lat, userLocation.lng, 15, { duration: 0.7 });
   }, [flyToUserSeq, userLocation?.lat, userLocation?.lng]);
+
+  // Fly smoothly to searched location when requested
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !flyToSearchSeq || !searchedLocation || !isValidLatLng(searchedLocation.lat, searchedLocation.lng)) {
+      return;
+    }
+    safeFlyOrSetView(map, searchedLocation.lat, searchedLocation.lng, searchedLocation.zoom || 14, { duration: 0.7 });
+  }, [flyToSearchSeq, searchedLocation?.lat, searchedLocation?.lng]);
 
   // Render Leaflet Zone Circles, Zone Markers, Live Technician Markers & User GPS Marker
   useEffect(() => {
@@ -349,7 +362,38 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
         zIndexOffset: 4000,
       }).addTo(overlayGroup);
     }
-  }, [activeZones, selectedZone, activeMode, isBangla, hoveredZoneId, pinnedZoneId, hoveredTechId, pinnedTechId, userLocation?.lat, userLocation?.lng]);
+
+    // 4. Searched Location Pin Marker
+    if (searchedLocation && isValidLatLng(searchedLocation.lat, searchedLocation.lng)) {
+      const safeName = searchedLocation.name
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      const searchPinHtml = `
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);pointer-events:none;">
+          <div style="margin-bottom:5px;padding:4px 11px;border-radius:9999px;background:#09090b;color:#ffffff;border:2px solid #f97316;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 8px 22px rgba(0,0,0,0.5);">
+            📍 ${safeName}
+          </div>
+          <div style="position:relative;display:flex;align-items:center;justify-content:center;">
+            <span style="position:absolute;width:46px;height:46px;border-radius:9999px;background:rgba(249,115,22,0.28);animation:ping 1.6s cubic-bezier(0,0,0.2,1) infinite;"></span>
+            <div style="position:relative;width:34px;height:34px;border-radius:9999px 9999px 9999px 4px;transform:rotate(-45deg);background:linear-gradient(135deg,#f97316,#dc2626);color:#ffffff;display:flex;align-items:center;justify-content:center;border:2.5px solid #ffffff;box-shadow:0 10px 24px rgba(234,88,12,0.55);">
+              <span style="transform:rotate(45deg);width:9px;height:9px;border-radius:9999px;background:#ffffff;display:block;"></span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      L.marker([searchedLocation.lat, searchedLocation.lng], {
+        icon: L.divIcon({
+          className: 'servexa-heatmap-search-pin',
+          html: searchPinHtml,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        }),
+        zIndexOffset: 4500,
+      }).addTo(overlayGroup);
+    }
+  }, [activeZones, selectedZone, activeMode, isBangla, hoveredZoneId, pinnedZoneId, hoveredTechId, pinnedTechId, userLocation?.lat, userLocation?.lng, searchedLocation?.lat, searchedLocation?.lng, searchedLocation?.name]);
 
   const activeZoneCard = activeZones.find(
     (z) => z.id === (pinnedZoneId || hoveredZoneId)

@@ -15,20 +15,28 @@ import {
   Share2,
   RefreshCw,
   Search,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
 import { DHAKA_HEATMAP_ZONES, HeatmapZone } from '../data/heatmapData';
 import { HeatmapWidget } from '../components/heatmap/HeatmapWidget';
 import { TechnicianMap } from '../components/map/TechnicianMap';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useToast } from '../contexts/ToastContext';
+import { geocodeBangladeshLocation } from '../utils/geoSearch';
+import { calculateHaversineDistance } from '../utils/geoUtils';
 
 export const HeatmapPage: React.FC = () => {
   const { isBangla } = useLanguage();
+  const { showToast } = useToast();
   const navigate = useNavigate();
 
   const [pageMode, setPageMode] = useState<'NEARBY_PROS' | 'SURGE_HEATMAP'>('NEARBY_PROS');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchingZone, setIsSearchingZone] = useState(false);
   const [selectedZone, setSelectedZone] = useState<HeatmapZone>(DHAKA_HEATMAP_ZONES[0]);
+  const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name: string; zoom?: number } | null>(null);
+  const [flyToSearchSeq, setFlyToSearchSeq] = useState(0);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'TECH_GUIDE' | 'SURGE_INFO'>('OVERVIEW');
 
   const filteredZones = DHAKA_HEATMAP_ZONES.filter(z =>
@@ -135,6 +143,8 @@ export const HeatmapPage: React.FC = () => {
               <HeatmapWidget
                 selectedZoneProp={selectedZone}
                 onSelectZone={(z) => setSelectedZone(z)}
+                searchedLocationProp={searchedLocation}
+                flyToSearchSeqProp={flyToSearchSeq}
               />
             </section>
           </>
@@ -181,22 +191,87 @@ export const HeatmapPage: React.FC = () => {
 
             {/* Zone Search Input with Search Button */}
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                const q = searchQuery.toLowerCase().trim();
-                const match = DHAKA_HEATMAP_ZONES.find(z =>
-                  z.nameEn.toLowerCase().includes(q) ||
-                  z.nameBn.includes(q)
+                const raw = searchQuery.trim();
+                const q = raw.toLowerCase();
+                if (!q) {
+                  showToast(
+                    isBangla ? 'অনুগ্রহ করে এলাকার নাম লিখুন।' : 'Please enter an area or location name.',
+                    'info'
+                  );
+                  return;
+                }
+
+                const match = DHAKA_HEATMAP_ZONES.find(
+                  (z) =>
+                    z.nameEn.toLowerCase().includes(q) ||
+                    z.nameBn.includes(raw)
                 );
                 if (match) {
                   setSelectedZone(match);
+                  setSearchedLocation({
+                    lat: match.lat,
+                    lng: match.lng,
+                    name: isBangla ? match.nameBn.split('(')[0].trim() : match.nameEn.split('(')[0].trim(),
+                    zoom: 14,
+                  });
+                  setFlyToSearchSeq((s) => s + 1);
                   setPageMode('SURGE_HEATMAP');
                   setTimeout(() => {
                     document.getElementById('heatmap-map-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }, 60);
+                  }, 80);
+                  return;
+                }
+
+                setIsSearchingZone(true);
+                try {
+                  const geo = await geocodeBangladeshLocation(raw, isBangla);
+                  if (!geo) {
+                    showToast(
+                      isBangla
+                        ? `"${raw}" লোকেশনটি খুঁজে পাওয়া যায়নি।`
+                        : `Could not locate "${raw}".`,
+                      'error'
+                    );
+                    return;
+                  }
+
+                  let nearest = DHAKA_HEATMAP_ZONES[0];
+                  let minDist = Infinity;
+                  for (const z of DHAKA_HEATMAP_ZONES) {
+                    const d = calculateHaversineDistance(geo.lat, geo.lng, z.lat, z.lng);
+                    if (d < minDist) {
+                      minDist = d;
+                      nearest = z;
+                    }
+                  }
+                  if (minDist <= 15) {
+                    setSelectedZone(nearest);
+                  }
+
+                  setSearchedLocation({
+                    lat: geo.lat,
+                    lng: geo.lng,
+                    name: geo.name,
+                    zoom: geo.zoom || 14,
+                  });
+                  setFlyToSearchSeq((s) => s + 1);
+                  setPageMode('SURGE_HEATMAP');
+                  showToast(
+                    isBangla
+                      ? `📍 ${geo.name} লোকেশনে ম্যাপ নিয়ে যাওয়া হয়েছে`
+                      : `📍 Moved map to ${geo.name}`,
+                    'success'
+                  );
+                  setTimeout(() => {
+                    document.getElementById('heatmap-map-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 80);
+                } finally {
+                  setIsSearchingZone(false);
                 }
               }}
-              className="relative w-full sm:w-72 flex items-center gap-1.5"
+              className="relative w-full sm:w-80 flex items-center gap-1.5"
             >
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
@@ -204,7 +279,7 @@ export const HeatmapPage: React.FC = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={isBangla ? 'এলাকা খুঁজুন (মিরপুর, উত্তরা...)' : 'Search zone (Mirpur, Uttara...)'}
+                  placeholder={isBangla ? 'যেকোনো এলাকা খুঁজুন (যাত্রাবাড়ী, সাভার...)' : 'Search any area (Jatrabari, Savar...)'}
                   className="w-full pl-8 pr-7 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500/50"
                 />
                 {searchQuery && (
@@ -213,9 +288,11 @@ export const HeatmapPage: React.FC = () => {
               </div>
               <button
                 type="submit"
-                className="px-3 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shrink-0 cursor-pointer transition-all shadow-sm"
+                disabled={isSearchingZone}
+                className="px-3 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shrink-0 cursor-pointer transition-all shadow-sm flex items-center gap-1 disabled:opacity-70"
               >
-                {isBangla ? 'খুঁজুন' : 'Search'}
+                {isSearchingZone && <Loader2 className="w-3 h-3 animate-spin" />}
+                <span>{isBangla ? 'খুঁজুন' : 'Search'}</span>
               </button>
             </form>
           </div>

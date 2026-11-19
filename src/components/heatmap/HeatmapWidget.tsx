@@ -14,6 +14,8 @@ import {
   ChevronRight,
   Activity,
   LocateFixed,
+  Search,
+  Loader2,
 } from 'lucide-react';
 import {
   DHAKA_HEATMAP_ZONES,
@@ -26,6 +28,7 @@ import { useApp } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { RealLeafletMap } from './RealLeafletMap';
+import { geocodeBangladeshLocation } from '../../utils/geoSearch';
 
 type HeatmapMode = 'DEMAND_INTENSITY' | 'PRO_DENSITY' | 'EMERGENCY_HOTSPOTS';
 
@@ -34,6 +37,8 @@ interface HeatmapWidgetProps {
   className?: string;
   selectedZoneProp?: HeatmapZone;
   onSelectZone?: (zone: HeatmapZone) => void;
+  searchedLocationProp?: { lat: number; lng: number; name: string; zoom?: number } | null;
+  flyToSearchSeqProp?: number;
 }
 
 function getZoneMatchTokens(zone: HeatmapZone): string[] {
@@ -67,6 +72,8 @@ export const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
   className = '',
   selectedZoneProp,
   onSelectZone,
+  searchedLocationProp = null,
+  flyToSearchSeqProp = 0,
 }) => {
   const { isBangla } = useLanguage();
   const { technicians, bookings, categories } = useApp();
@@ -81,6 +88,12 @@ export const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isLocatingUser, setIsLocatingUser] = useState(false);
   const [flyToUserSeq, setFlyToUserSeq] = useState(0);
+  const [widgetSearchQuery, setWidgetSearchQuery] = useState('');
+  const [isSearchingWidgetLoc, setIsSearchingWidgetLoc] = useState(false);
+  const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name: string; zoom?: number } | null>(
+    searchedLocationProp
+  );
+  const [flyToSearchSeq, setFlyToSearchSeq] = useState(0);
 
   // Derive live zones strictly from Firestore technicians + bookings (zero mock stats)
   const dynamicZones: HeatmapZone[] = useMemo(() => {
@@ -200,6 +213,14 @@ export const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
     }
   }, [selectedZoneProp?.id]);
 
+  useEffect(() => {
+    if (flyToSearchSeqProp && searchedLocationProp) {
+      setSearchedLocation(searchedLocationProp);
+      setFlyToSearchSeq((s) => s + 1);
+      setWidgetSearchQuery(searchedLocationProp.name);
+    }
+  }, [flyToSearchSeqProp, searchedLocationProp?.lat, searchedLocationProp?.lng, searchedLocationProp?.name]);
+
   const selectedZone =
     dynamicZones.find((z) => z.id === selectedZoneId) || dynamicZones[0];
 
@@ -295,6 +316,59 @@ export const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
+  };
+
+  const handleWidgetLocationSearch = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const q = widgetSearchQuery.trim();
+    if (!q) {
+      showToast(
+        isBangla ? 'অনুগ্রহ করে যেকোনো এলাকার নাম লিখুন।' : 'Please enter an area or location name.',
+        'info'
+      );
+      return;
+    }
+
+    setIsSearchingWidgetLoc(true);
+    try {
+      const geo = await geocodeBangladeshLocation(q, isBangla);
+      if (!geo) {
+        showToast(
+          isBangla
+            ? `"${q}" লোকেশনটি খুঁজে পাওয়া যায়নি। এলাকার নাম স্পষ্টভাবে লিখুন।`
+            : `Could not locate "${q}". Try a clearer area or district name.`,
+          'error'
+        );
+        return;
+      }
+
+      setSearchedLocation({ lat: geo.lat, lng: geo.lng, name: geo.name, zoom: geo.zoom });
+      setFlyToSearchSeq((s) => s + 1);
+
+      // Update selected zone if within 12km of a Dhaka zone
+      let nearestZone = dynamicZones[0];
+      let minDist = Infinity;
+      dynamicZones.forEach((z) => {
+        const d = approxKmDistance(geo.lat, geo.lng, z.lat, z.lng);
+        if (d < minDist) {
+          minDist = d;
+          nearestZone = z;
+        }
+      });
+      if (minDist <= 12 && nearestZone) {
+        setSelectedZoneId(nearestZone.id);
+        if (onSelectZone) onSelectZone(nearestZone);
+      }
+
+      showToast(
+        isBangla
+          ? `📍 ${geo.name} লোকেশনে ম্যাপ এবং পিন নিয়ে যাওয়া হয়েছে`
+          : `📍 Moved map & location pin to ${geo.name}`,
+        'success'
+      );
+    } finally {
+      setIsSearchingWidgetLoc(false);
+    }
   };
 
   const totalOnlinePros = technicians.filter((t) => t.availability !== 'offline').length;
@@ -476,7 +550,53 @@ export const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
       {/* Main Heatmap Stage */}
       <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[480px]">
         {/* Left Real Leaflet Map Viewport (8 Cols) */}
-        <div className="lg:col-span-8 p-4 sm:p-6 flex flex-col justify-between overflow-hidden bg-stone-100/60 dark:bg-zinc-950/70 border-b lg:border-b-0 lg:border-r border-zinc-200 dark:border-zinc-800 transition-colors">
+        <div className="lg:col-span-8 p-4 sm:p-6 flex flex-col justify-between overflow-hidden bg-stone-100/60 dark:bg-zinc-950/70 border-b lg:border-b-0 lg:border-r border-zinc-200 dark:border-zinc-800 transition-colors gap-3">
+          {/* Quick Location Search Bar for Heatmap */}
+          <form onSubmit={handleWidgetLocationSearch} className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-orange-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={widgetSearchQuery}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setWidgetSearchQuery(val);
+                  if (!val.trim()) setSearchedLocation(null);
+                }}
+                placeholder={
+                  isBangla
+                    ? 'যেকোনো এলাকা বা লোকেশন খুঁজুন (যেমন: যাত্রাবাড়ী, সাভার, চট্টগ্রাম...)'
+                    : 'Search any area or location (e.g. Jatrabari, Savar, Chattogram...)'
+                }
+                className="w-full pl-9 pr-7 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+              />
+              {widgetSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWidgetSearchQuery('');
+                    setSearchedLocation(null);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={isSearchingWidgetLoc}
+              className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer disabled:opacity-70"
+            >
+              {isSearchingWidgetLoc ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Search className="w-3.5 h-3.5" />
+              )}
+              <span>{isSearchingWidgetLoc ? (isBangla ? 'খুঁজছে...' : 'Finding...') : isBangla ? 'সার্চ' : 'Search'}</span>
+            </button>
+          </form>
+
           <RealLeafletMap
             zones={dynamicZones}
             selectedZone={selectedZone}
@@ -484,6 +604,8 @@ export const HeatmapWidget: React.FC<HeatmapWidgetProps> = ({
             activeMode={activeMode}
             userLocation={userLocation}
             flyToUserSeq={flyToUserSeq}
+            searchedLocation={searchedLocation}
+            flyToSearchSeq={flyToSearchSeq}
           />
 
           {/* Real-Time Live Activity Ticker Bar */}
