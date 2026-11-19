@@ -1,0 +1,268 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Servexa user profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "email": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "role": { "type": "string", "maxLength": 30 },
+        "avatar": { "type": "string", "maxLength": 500000 },
+        "division": { "type": "string", "maxLength": 100 },
+        "district": { "type": "string", "maxLength": 100 },
+        "city": { "type": "string", "maxLength": 100 },
+        "area": { "type": "string", "maxLength": 100 },
+        "address": { "type": "string", "maxLength": 300 },
+        "nidVerified": { "type": "boolean" },
+        "phoneVerified": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "name", "role"]
+    },
+    "Technician": {
+      "title": "Technician",
+      "description": "Professional technician profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "avatar": { "type": "string", "maxLength": 500000 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 150 },
+        "primaryArea": { "type": "string", "maxLength": 100 },
+        "city": { "type": "string", "maxLength": 100 },
+        "district": { "type": "string", "maxLength": 100 },
+        "division": { "type": "string", "maxLength": 100 },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "completedJobs": { "type": "number" },
+        "visitingFee": { "type": "number" },
+        "startingPrice": { "type": "number" },
+        "availability": { "type": "string", "maxLength": 30 },
+        "skills": { "type": "array" },
+        "serviceAreas": { "type": "array" },
+        "bioEn": { "type": "string", "maxLength": 1000 },
+        "bioBn": { "type": "string", "maxLength": 1000 },
+        "aboutEn": { "type": "string", "maxLength": 2000 },
+        "aboutBn": { "type": "string", "maxLength": 2000 },
+        "workingHours": { "type": "string", "maxLength": 100 },
+        "warrantyPeriodDays": { "type": "number" },
+        "phoneVerified": { "type": "boolean" },
+        "nidVerified": { "type": "boolean" },
+        "skillVerified": { "type": "boolean" },
+        "platformVerified": { "type": "boolean" }
+      },
+      "required": ["id", "name", "userId"]
+    },
+    "ServiceCategory": {
+      "title": "ServiceCategory",
+      "description": "Catalog of available home services",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "nameEn": { "type": "string", "maxLength": 100 },
+        "nameBn": { "type": "string", "maxLength": 100 },
+        "icon": { "type": "string", "maxLength": 50 },
+        "descriptionEn": { "type": "string", "maxLength": 300 },
+        "descriptionBn": { "type": "string", "maxLength": 300 },
+        "startingPrice": { "type": "number" },
+        "popular": { "type": "boolean" },
+        "emergencyAvailable": { "type": "boolean" },
+        "activeProfessionals": { "type": "number" }
+      },
+      "required": ["id", "nameEn", "nameBn", "startingPrice"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Customer service booking record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingNumber": { "type": "string", "maxLength": 50 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "customerPhone": { "type": "string", "maxLength": 30 },
+        "customerCity": { "type": "string", "maxLength": 100 },
+        "customerArea": { "type": "string", "maxLength": 100 },
+        "customerAddress": { "type": "string", "maxLength": 300 },
+        "customerLat": { "type": "number" },
+        "customerLng": { "type": "number" },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "technicianName": { "type": "string", "maxLength": 150 },
+        "technicianPhone": { "type": "string", "maxLength": 30 },
+        "categoryId": { "type": "string", "maxLength": 64 },
+        "serviceNameEn": { "type": "string", "maxLength": 150 },
+        "serviceNameBn": { "type": "string", "maxLength": 150 },
+        "problemDescription": { "type": "string", "maxLength": 1000 },
+        "date": { "type": "string", "maxLength": 50 },
+        "timeSlot": { "type": "string", "maxLength": 50 },
+        "urgency": { "type": "string", "maxLength": 30 },
+        "estimatedVisitingFee": { "type": "number" },
+        "estimatedTotalMin": { "type": "number" },
+        "estimatedTotalMax": { "type": "number" },
+        "finalTotal": { "type": "number" },
+        "status": { "type": "string", "maxLength": 30 },
+        "paymentStatus": { "type": "string", "maxLength": 30 },
+        "paymentMethod": { "type": "string", "maxLength": 30 },
+        "warrantyDays": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "bookingNumber", "customerId", "technicianId", "status"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Service review and technician rating",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "overallRating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 1000 },
+        "serviceName": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "bookingId", "customerId", "technicianId", "overallRating"]
+    },
+    "WarrantyClaim": {
+      "title": "WarrantyClaim",
+      "description": "Warranty claim requested by customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "bookingNumber": { "type": "string", "maxLength": 50 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "serviceName": { "type": "string", "maxLength": 150 },
+        "issueDescription": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "maxLength": 30 },
+        "requestDate": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "bookingId", "customerId", "technicianId", "issueDescription"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Chat message between booking participants",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderRole": { "type": "string", "maxLength": 30 },
+        "senderName": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "bookingId", "senderId", "message", "timestamp"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Real-time user, technician, and admin notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "maxLength": 30 },
+        "titleEn": { "type": "string", "maxLength": 200 },
+        "titleBn": { "type": "string", "maxLength": 200 },
+        "messageEn": { "type": "string", "maxLength": 500 },
+        "messageBn": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "maxLength": 30 },
+        "link": { "type": "string", "maxLength": 300 },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "role", "titleEn", "titleBn", "isRead", "createdAt"]
+    },
+    "ReportItem": {
+      "title": "ReportItem",
+      "description": "Dispute and complaint report",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "bookingNumber": { "type": "string", "maxLength": 50 },
+        "reporterId": { "type": "string", "maxLength": 128 },
+        "reporterName": { "type": "string", "maxLength": 150 },
+        "reporterRole": { "type": "string", "maxLength": 30 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "targetName": { "type": "string", "maxLength": 150 },
+        "targetRole": { "type": "string", "maxLength": 30 },
+        "reason": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "maxLength": 30 },
+        "adminResolution": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "bookingId", "reporterId", "reason", "status", "createdAt"]
+    },
+    "MaintenanceReminder": {
+      "title": "MaintenanceReminder",
+      "description": "Recurring home appliance maintenance reminder",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "categoryId": { "type": "string", "maxLength": 64 },
+        "titleEn": { "type": "string", "maxLength": 150 },
+        "titleBn": { "type": "string", "maxLength": 150 },
+        "frequencyMonths": { "type": "number" },
+        "lastServiceDate": { "type": "string", "maxLength": 50 },
+        "nextDueDate": { "type": "string", "maxLength": 50 },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "customerId", "categoryId", "titleEn", "frequencyMonths"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/technicians/{technicianId}": {
+      "schema": "Technician",
+      "description": "Registered technician profiles"
+    },
+    "/categories/{categoryId}": {
+      "schema": "ServiceCategory",
+      "description": "Service categories"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Service bookings"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Customer reviews"
+    },
+    "/warranties/{warrantyId}": {
+      "schema": "WarrantyClaim",
+      "description": "Warranty claims"
+    },
+    "/chatMessages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Direct communication messages"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Real-time notifications"
+    },
+    "/reports/{reportId}": {
+      "schema": "ReportItem",
+      "description": "Dispute and complaint reports"
+    },
+    "/maintenanceReminders/{reminderId}": {
+      "schema": "MaintenanceReminder",
+      "description": "Customer maintenance reminders"
+    }
+  }
+}

@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, X, Lock, ChevronRight, User, Wrench, ShieldCheck } from 'lucide-react';
+import { Menu, X, Lock, ChevronRight, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { UserRole } from '../../types';
 
 export interface DashboardNavItem {
   id: string;
@@ -54,7 +53,7 @@ const KPI_VALUE_COLOR: Record<NonNullable<DashboardKpiItem['accent']>, string> =
   amber: 'text-amber-600 dark:text-amber-400',
   rose: 'text-rose-600 dark:text-rose-400',
   blue: 'text-blue-600 dark:text-blue-400',
-  neutral: 'text-zinc-900 dark:text-white'
+  neutral: 'text-zinc-900 dark:text-white',
 };
 
 export const DashboardShell: React.FC<DashboardShellProps> = ({
@@ -74,39 +73,12 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   mobileStickyTopSlot,
   kpis,
   banners,
-  children
+  children,
 }) => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const { role, quickDemoLogin } = useAuth();
+  const { logout } = useAuth();
   const { isBangla } = useLanguage();
   const navigate = useNavigate();
-
-  const roleTargets: { id: UserRole; label: string; icon: React.ReactNode; path: string }[] = [
-    {
-      id: 'CUSTOMER',
-      label: isBangla ? 'গ্রাহক' : 'Customer',
-      icon: <User className="w-3.5 h-3.5" />,
-      path: '/customer/dashboard'
-    },
-    {
-      id: 'TECHNICIAN',
-      label: isBangla ? 'মিস্ত্রি' : 'Pro',
-      icon: <Wrench className="w-3.5 h-3.5" />,
-      path: '/technician/dashboard'
-    },
-    {
-      id: 'ADMIN',
-      label: isBangla ? 'অ্যাডমিন' : 'Admin',
-      icon: <ShieldCheck className="w-3.5 h-3.5" />,
-      path: '/admin/dashboard'
-    }
-  ];
-
-  const handleRoleSwitch = (targetRole: UserRole, path: string) => {
-    quickDemoLogin(targetRole);
-    setMobileSidebarOpen(false);
-    navigate(path);
-  };
 
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -122,7 +94,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
             />
           ) : (
             <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-zinc-900 dark:bg-zinc-800 text-white flex items-center justify-center font-bold text-xs sm:text-sm shrink-0">
-              {userName.slice(0, 2).toUpperCase()}
+              {(userName || 'U').slice(0, 2).toUpperCase()}
             </div>
           )}
           <div className="min-w-0 flex-1">
@@ -134,7 +106,13 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
             </div>
             <div className="text-[10px] sm:text-[11px] text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
               {verifiedLabel ? (
-                <span className={isVerified ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-amber-600 dark:text-amber-400 font-medium'}>
+                <span
+                  className={
+                    isVerified
+                      ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+                      : 'text-amber-600 dark:text-amber-400 font-medium'
+                  }
+                >
                   {verifiedLabel} ·{' '}
                 </span>
               ) : null}
@@ -151,7 +129,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       </div>
 
       {/* Grouped Vertical Navigation */}
-      <nav aria-label={portalLabel} className="flex-1 p-2.5 sm:p-3 space-y-3.5 sm:space-y-4 overflow-y-auto">
+      <nav
+        aria-label={portalLabel}
+        className="flex-1 p-2.5 sm:p-3 space-y-3.5 sm:space-y-4 overflow-y-auto"
+      >
         {navGroups.map((group) => (
           <div key={group.id} className="space-y-0.5">
             <div className="px-2.5 pb-1 text-[10px] sm:text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 tracking-wide">
@@ -180,8 +161,18 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                     }`}
                   >
                     <span className="flex items-center gap-2 min-w-0">
-                      <span className={`shrink-0 ${isActive ? 'text-orange-600 dark:text-orange-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
-                        {item.locked ? <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" /> : item.icon}
+                      <span
+                        className={`shrink-0 ${
+                          isActive
+                            ? 'text-orange-600 dark:text-orange-400'
+                            : 'text-zinc-400 dark:text-zinc-500'
+                        }`}
+                      >
+                        {item.locked ? (
+                          <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" />
+                        ) : (
+                          item.icon
+                        )}
                       </span>
                       <span className="truncate whitespace-nowrap">{item.label}</span>
                     </span>
@@ -207,31 +198,20 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         ))}
       </nav>
 
-      {/* Sidebar Footer: Compact Workspace Role Switcher */}
+      {/* Sidebar Footer: Explicit Logout Action */}
       <div className="p-2.5 sm:p-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-950/40 rounded-b-2xl">
-        <div className="px-1 pb-1.5 text-[10px] sm:text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-          {isBangla ? 'পোর্টাল পরিবর্তন (রোল)' : 'Switch Workspace Role'}
-        </div>
-        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-stone-200/70 dark:bg-zinc-800/80">
-          {roleTargets.map((r) => {
-            const active = role === r.id;
-            return (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => handleRoleSwitch(r.id, r.path)}
-                className={`py-1.5 px-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 whitespace-nowrap transition-colors duration-150 cursor-pointer ${
-                  active
-                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {r.icon}
-                <span>{r.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            logout();
+            setMobileSidebarOpen(false);
+            navigate('/login');
+          }}
+          className="w-full py-2 px-3 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span>{isBangla ? 'লগআউট করুন' : 'Sign Out'}</span>
+        </button>
       </div>
     </div>
   );
@@ -305,7 +285,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         </div>
       )}
 
-      {/* Desktop Two-Column Workspace: Sticky Left Rail + Main Viewport */}
+      {/* Desktop Two-Column Workspace */}
       <div className="flex flex-col lg:flex-row items-start gap-4 lg:gap-6">
         <aside className="hidden lg:flex w-[272px] shrink-0 sticky top-20 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden max-h-[calc(100vh-6rem)] flex-col">
           {renderSidebarContent()}
@@ -335,13 +315,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
             </div>
 
             {headerActions && (
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {headerActions}
-              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">{headerActions}</div>
             )}
           </div>
 
-          {/* Compact 2-Column Mobile / 4-Column Desktop KPI Metrics Strip */}
           {kpis && kpis.length > 0 && (
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-3.5">
               {kpis.map((kpi) => (
@@ -367,10 +344,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
             </div>
           )}
 
-          {/* Contextual Alert / Progress Banners */}
           {banners}
 
-          {/* Active Page / Section Content */}
           <section aria-label={activeSectionTitle} className="min-w-0">
             {children}
           </section>

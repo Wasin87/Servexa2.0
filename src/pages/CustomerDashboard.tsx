@@ -27,12 +27,12 @@ import {
 import { useApp } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useToast } from '../contexts/ToastContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { InvoiceModal } from '../components/common/InvoiceModal';
 import { ChatModal } from '../components/common/ChatModal';
 import { DashboardShell, DashboardNavGroup, DashboardKpiItem } from '../components/common/DashboardShell';
 import { ImageUploader } from '../components/common/ImageUploader';
-import { ConfettiCelebration } from '../components/common/ConfettiCelebration';
 import { BANGLADESH_DIVISIONS, BANGLADESH_DISTRICTS, getDistrictsByDivision, findDistrict } from '../data/bangladeshLocations';
 import { calculateCustomerCompletion } from '../utils/profileCompletion';
 import { Invoice, Booking, Review, WarrantyClaim } from '../types';
@@ -61,6 +61,7 @@ export const CustomerDashboard: React.FC = () => {
   } = useApp();
   const { currentUser, updateProfile } = useAuth();
   const { t, isBangla } = useLanguage();
+  const { showToast: showGlobalToast, triggerConfettiBurst } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -80,12 +81,9 @@ export const CustomerDashboard: React.FC = () => {
   const [bookingFilter, setBookingFilter] = useState<'ALL' | 'ACTIVE' | 'COMPLETED'>('ALL');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [chatModalBooking, setChatModalBooking] = useState<Booking | null>(null);
-  const [customerToast, setCustomerToast] = useState<string | null>(null);
-  const [showConfetti, setShowConfetti] = useState(false);
 
-  const showToast = (msg: string) => {
-    setCustomerToast(msg);
-    setTimeout(() => setCustomerToast(null), 4000);
+  const showToast = (msg: string, variant: 'success' | 'error' | 'info' = 'success') => {
+    showGlobalToast(msg, variant);
   };
 
   // Review Modal State
@@ -110,7 +108,7 @@ export const CustomerDashboard: React.FC = () => {
   // Profile Edit State
   const [profileName, setProfileName] = useState(currentUser?.name || '');
   const [profilePhone, setProfilePhone] = useState(currentUser?.phone || '');
-  const [profileAvatar, setProfileAvatar] = useState(currentUser?.avatar || '/src/assets/images/tech_portrait_senior_1794936426060.jpg');
+  const [profileAvatar, setProfileAvatar] = useState(currentUser?.avatar || '');
   const [profileDivision, setProfileDivision] = useState(currentUser?.division || '');
   const [profileDistrict, setProfileDistrict] = useState(currentUser?.district || currentUser?.city || '');
   const [profileArea, setProfileArea] = useState(currentUser?.area || '');
@@ -132,9 +130,9 @@ export const CustomerDashboard: React.FC = () => {
     if (currentUser) {
       setProfileName(currentUser.name || '');
       setProfilePhone(currentUser.phone || '');
-      setProfileAvatar(currentUser.avatar || '/src/assets/images/tech_portrait_senior_1794936426060.jpg');
+      setProfileAvatar(currentUser.avatar || '');
       setProfileDivision(currentUser.division || '');
-      setProfileDistrict(currentUser.district || currentUser.city || '');
+      setProfileDistrict(currentUser.district || currentUser?.city || '');
       setProfileArea(currentUser.area || '');
       setProfileAddress(currentUser.address || '');
     }
@@ -145,7 +143,7 @@ export const CustomerDashboard: React.FC = () => {
   const activeDistrictObj = findDistrict(profileDistrict) || districtsInDivision[0] || BANGLADESH_DISTRICTS[0];
   const areasInDistrict = profileDistrict ? activeDistrictObj.areas : [];
 
-  const customerBookings = bookings.filter(b => b.customerId === currentUser?.id || currentUser?.role === 'CUSTOMER');
+  const customerBookings = bookings.filter(b => b.customerId === currentUser?.id);
   const activeBookings = customerBookings.filter(b => !['COMPLETED', 'CANCELLED'].includes(b.status));
   const completedBookings = customerBookings.filter(b => b.status === 'COMPLETED');
 
@@ -157,7 +155,9 @@ export const CustomerDashboard: React.FC = () => {
 
   const favoriteTechs = technicians.filter(t => favorites.includes(t.id));
   const customerInvoices = customerBookings.map(b => b.invoice).filter((inv): inv is Invoice => !!inv);
-  const customerWarranties = warranties.filter(w => w.customerId === currentUser?.id || currentUser?.role === 'CUSTOMER');
+  const customerWarranties = warranties.filter(w => w.customerId === currentUser?.id);
+  const customerReviews = reviews.filter(r => r.customerId === currentUser?.id);
+  const customerReminders = maintenanceReminders.filter(r => r.customerId === currentUser?.id);
   const pendingFeedbackBookings = completedBookings.filter(b => !b.reviewed);
 
   const handleCreateReminder = (e: React.FormEvent) => {
@@ -169,7 +169,7 @@ export const CustomerDashboard: React.FC = () => {
     dueDate.setMonth(today.getMonth() + remMonths);
 
     addMaintenanceReminder({
-      customerId: currentUser?.id || 'cust',
+      customerId: currentUser?.id || '',
       categoryId: remCategory,
       titleEn: remTitle,
       titleBn: remTitle,
@@ -180,6 +180,7 @@ export const CustomerDashboard: React.FC = () => {
 
     setRemTitle('');
     setShowAddReminder(false);
+    showToast(isBangla ? 'নতুন রিমাইন্ডার সংরক্ষিত হয়েছে!' : 'Maintenance reminder saved!');
   };
 
   const handleReviewSubmit = (e: React.FormEvent) => {
@@ -190,9 +191,9 @@ export const CustomerDashboard: React.FC = () => {
 
     submitReview({
       bookingId: reviewBooking.id,
-      customerId: currentUser?.id || 'user-customer',
+      customerId: currentUser?.id || '',
       customerName: currentUser?.name || (isBangla ? 'গ্রাহক' : 'Customer'),
-      customerAvatar: currentUser?.avatar || '/src/assets/images/tech_portrait_senior_1794936426060.jpg',
+      customerAvatar: currentUser?.avatar || '',
       technicianId: reviewBooking.technicianId,
       overallRating,
       workQuality: ratingWorkQuality,
@@ -206,6 +207,7 @@ export const CustomerDashboard: React.FC = () => {
 
     setReviewBooking(null);
     setReviewComment('');
+    triggerConfettiBurst();
     showToast(
       isBangla
         ? 'আপনার মূল্যবান ফিডব্যাক ও রেটিং সফলভাবে জমা হয়েছে!'
@@ -220,7 +222,7 @@ export const CustomerDashboard: React.FC = () => {
     submitWarrantyClaim({
       bookingId: warrantyBooking.id,
       bookingNumber: warrantyBooking.bookingNumber,
-      customerId: currentUser?.id || warrantyBooking.customerId || 'user-customer',
+      customerId: currentUser?.id || warrantyBooking.customerId || '',
       customerName: currentUser?.name || warrantyBooking.customerName,
       customerPhone: currentUser?.phone || warrantyBooking.customerPhone,
       customerArea: warrantyBooking.customerArea,
@@ -237,6 +239,7 @@ export const CustomerDashboard: React.FC = () => {
     setWarrantyBooking(null);
     setWarrantyIssue('');
     setActiveTab('warranties');
+    triggerConfettiBurst();
     showToast(
       isBangla
         ? 'ওয়ারেন্টি ক্লেইম অ্যাডমিনের কাছে পাঠানো হয়েছে! অনুমোদনের পর নির্ধারিত টেকনিশিয়ানের কাছে যাবে।'
@@ -291,7 +294,7 @@ export const CustomerDashboard: React.FC = () => {
       ...updatedFields
     });
     if (nextCompletion.isComplete) {
-      setShowConfetti(true);
+      triggerConfettiBurst();
       showToast(
         isBangla
           ? 'অভিনন্দন! আপনার গ্রাহক প্রোফাইল ১০০% সম্পূর্ণ হয়েছে — এখন সার্ভিস বুক করতে পারবেন!'
@@ -301,7 +304,8 @@ export const CustomerDashboard: React.FC = () => {
       showToast(
         isBangla
           ? `প্রোফাইল সংরক্ষিত হয়েছে (${nextCompletion.percent}% সম্পূর্ণ)`
-          : `Profile saved (${nextCompletion.percent}% complete)`
+          : `Profile saved (${nextCompletion.percent}% complete)`,
+        'info'
       );
     }
   };
@@ -321,7 +325,7 @@ export const CustomerDashboard: React.FC = () => {
           id: 'feedback',
           label: isBangla ? 'ফিডব্যাক ও রিভিউ' : 'Feedback & Reviews',
           icon: <Star className="w-4 h-4" />,
-          count: pendingFeedbackBookings.length > 0 ? pendingFeedbackBookings.length : reviews.length,
+          count: pendingFeedbackBookings.length > 0 ? pendingFeedbackBookings.length : customerReviews.length,
           highlightCount: pendingFeedbackBookings.length > 0
         },
         {
@@ -352,7 +356,7 @@ export const CustomerDashboard: React.FC = () => {
           id: 'reminders',
           label: isBangla ? 'রক্ষণাবেক্ষণ রিমাইন্ডার' : 'Appliance Reminders',
           icon: <Clock className="w-4 h-4" />,
-          count: maintenanceReminders.length
+          count: customerReminders.length
         },
         {
           id: 'profile',
@@ -435,7 +439,7 @@ export const CustomerDashboard: React.FC = () => {
     {
       id: 'reminders',
       label: isBangla ? 'রক্ষণাবেক্ষণ রিমাইন্ডার' : 'Reminders',
-      value: maintenanceReminders.length,
+      value: customerReminders.length,
       sublabel: isBangla ? 'পরবর্তী সার্ভিস শিডিউল' : 'Scheduled checks',
       accent: 'blue'
     }
@@ -503,21 +507,11 @@ export const CustomerDashboard: React.FC = () => {
 
   return (
     <>
-      <ConfettiCelebration active={showConfetti} onComplete={() => setShowConfetti(false)} />
-
-      {/* Toast Notification */}
-      {customerToast && (
-        <div className="fixed bottom-20 lg:bottom-6 right-3 sm:right-6 left-3 sm:left-auto z-[3100] px-4 py-3 rounded-2xl bg-zinc-900 text-white text-xs font-bold shadow-2xl border border-orange-500/50 flex items-center gap-2 animate-in slide-in-from-bottom-3">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{customerToast}</span>
-        </div>
-      )}
-
       <DashboardShell
         portalLabel={isBangla ? 'গ্রাহক ড্যাশবোর্ড' : 'Customer Portal'}
         userName={currentUser?.name || (isBangla ? 'গ্রাহক' : 'Customer')}
         userMeta={`${currentUser?.area ? `${currentUser.area}, ` : ''}${currentUser?.district || currentUser?.city || (isBangla ? 'ঠিকানা অসম্পূর্ণ' : 'Address Incomplete')}`}
-        userAvatar={currentUser?.avatar || '/src/assets/images/tech_portrait_senior_1794936426060.jpg'}
+        userAvatar={currentUser?.avatar || ''}
         verifiedLabel={isBangla ? 'ভেরিফাইড অ্যাকাউন্ট' : 'Verified'}
         isVerified
         navGroups={customerNavGroups}
@@ -642,11 +636,17 @@ export const CustomerDashboard: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                       {/* Technician Info */}
                       <div className="flex items-center gap-3 p-3 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60">
-                        <img
-                          src={booking.technicianAvatar}
-                          alt={booking.technicianName}
-                          className="w-12 h-12 rounded-xl object-cover border border-orange-500/30 shrink-0"
-                        />
+                        {booking.technicianAvatar ? (
+                          <img
+                            src={booking.technicianAvatar}
+                            alt={booking.technicianName}
+                            className="w-12 h-12 rounded-xl object-cover border border-orange-500/30 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
+                            {(booking.technicianName || 'T').charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <div className="min-w-0">
                           <div className="font-extrabold text-xs text-zinc-900 dark:text-white truncate">
                             {booking.technicianName}
@@ -826,7 +826,13 @@ export const CustomerDashboard: React.FC = () => {
                 {pendingFeedbackBookings.map(b => (
                   <div key={b.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border-2 border-amber-400/50 shadow-sm flex flex-col justify-between gap-3 sm:gap-4">
                     <div className="flex items-start gap-3">
-                      <img src={b.technicianAvatar} alt={b.technicianName} className="w-12 h-12 rounded-2xl object-cover border border-orange-500/30 shrink-0" />
+                      {b.technicianAvatar ? (
+                        <img src={b.technicianAvatar} alt={b.technicianName} className="w-12 h-12 rounded-2xl object-cover border border-orange-500/30 shrink-0" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-2xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
+                          {(b.technicianName || 'T').charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div>
                         <span className="text-[11px] font-mono font-bold text-orange-600">#{b.bookingNumber}</span>
                         <h4 className="font-black text-sm text-zinc-900 dark:text-white">
@@ -856,11 +862,16 @@ export const CustomerDashboard: React.FC = () => {
           {/* Submitted Feedback History */}
           <div className="space-y-3">
             <h4 className="text-sm font-black text-zinc-900 dark:text-white">
-              {isBangla ? 'আপনার প্রদানকৃত রিভিউ ও ফিডব্যাক হিস্ট্রি' : 'Your Submitted Feedback History'} ({reviews.length})
+              {isBangla ? 'আপনার প্রদানকৃত রিভিউ ও ফিডব্যাক হিস্ট্রি' : 'Your Submitted Feedback History'} ({customerReviews.length})
             </h4>
 
+            {customerReviews.length === 0 ? (
+              <div className="p-6 text-center rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500">
+                {isBangla ? 'আপনি এখনও কোনো রিভিউ প্রদান করেননি।' : 'You have not submitted any reviews yet.'}
+              </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-              {reviews.map(rev => {
+              {customerReviews.map(rev => {
                 const tech = technicians.find(item => item.id === rev.technicianId);
                 return (
                   <div key={rev.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
@@ -902,6 +913,7 @@ export const CustomerDashboard: React.FC = () => {
                 );
               })}
             </div>
+            )}
           </div>
         </div>
       )}
@@ -994,8 +1006,19 @@ export const CustomerDashboard: React.FC = () => {
             </form>
           )}
 
+          {customerReminders.length === 0 ? (
+            <div className="p-7 sm:p-10 text-center bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 space-y-2">
+              <Clock className="w-10 h-10 text-zinc-400 mx-auto" />
+              <h4 className="font-bold text-sm text-zinc-900 dark:text-white">
+                {isBangla ? 'কোনো রিমাইন্ডার সেট করা নেই' : 'No maintenance reminders set'}
+              </h4>
+              <p className="text-xs text-zinc-500">
+                {isBangla ? 'এসি বা হোম অ্যাপ্লায়েন্সের নিয়মিত সার্ভিসিং মনে রাখতে উপরের বাটন থেকে রিমাইন্ডার যোগ করুন।' : 'Click Add Reminder above to schedule recurring appliance care.'}
+              </p>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {maintenanceReminders.map((rem) => (
+            {customerReminders.map((rem) => (
               <div
                 key={rem.id}
                 className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-start justify-between gap-3 sm:gap-4 shadow-xs"
@@ -1036,6 +1059,7 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -1070,7 +1094,13 @@ export const CustomerDashboard: React.FC = () => {
                   className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-3.5 sm:space-y-4 hover:border-orange-500/40 transition-all"
                 >
                   <div className="flex items-start gap-3">
-                    <img src={tech.avatar} alt={tech.name} className="w-14 h-14 rounded-2xl object-cover border-2 border-orange-500/30 shrink-0" />
+                    {tech.avatar ? (
+                      <img src={tech.avatar} alt={tech.name} className="w-14 h-14 rounded-2xl object-cover border-2 border-orange-500/30 shrink-0" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-2xl bg-orange-600 text-white font-black text-lg flex items-center justify-center border-2 border-orange-500/30 shrink-0">
+                        {(tech.name || 'T').charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <h4 className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-1.5">
                         <span>{tech.name}</span>
@@ -1327,6 +1357,8 @@ export const CustomerDashboard: React.FC = () => {
             <ImageUploader
               currentImage={profileAvatar}
               onImageChange={setProfileAvatar}
+              onRemove={() => setProfileAvatar('')}
+              showPresets={false}
               label={isBangla ? 'প্রোফাইল ছবি (ডিভাইস থেকে সরাসরি আপলোড করুন):' : 'Profile Photo (Direct Device Upload):'}
               shape="circle"
             />
@@ -1338,9 +1370,9 @@ export const CustomerDashboard: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  required
                   value={profileName}
                   onChange={(e) => setProfileName(e.target.value)}
+                  placeholder={isBangla ? 'আপনার পূর্ণ নাম লিখুন' : 'Enter your full name'}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-medium"
                 />
               </div>
@@ -1351,9 +1383,9 @@ export const CustomerDashboard: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  required
                   value={profilePhone}
                   onChange={(e) => setProfilePhone(e.target.value)}
+                  placeholder={isBangla ? '০১XXXXXXXXX' : '01XXXXXXXXX'}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-medium"
                 />
               </div>
@@ -1365,7 +1397,6 @@ export const CustomerDashboard: React.FC = () => {
                   {isBangla ? 'বিভাগ (Division):' : 'Division:'}
                 </label>
                 <select
-                  required
                   value={profileDivision}
                   onChange={(e) => handleCustomerDivisionChange(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-medium"
@@ -1384,7 +1415,6 @@ export const CustomerDashboard: React.FC = () => {
                   {isBangla ? 'জেলা (৬৪ জেলা):' : 'District (64):'}
                 </label>
                 <select
-                  required
                   value={profileDistrict}
                   onChange={(e) => handleCustomerDistrictChange(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-medium"
@@ -1403,7 +1433,6 @@ export const CustomerDashboard: React.FC = () => {
                   {isBangla ? 'এলাকা / উপজেলা:' : 'Area / Upazila:'}
                 </label>
                 <select
-                  required
                   value={profileArea}
                   onChange={(e) => setProfileArea(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-medium"
@@ -1424,7 +1453,6 @@ export const CustomerDashboard: React.FC = () => {
               </label>
               <textarea
                 rows={3}
-                required
                 value={profileAddress}
                 onChange={(e) => setProfileAddress(e.target.value)}
                 placeholder={isBangla ? 'যেমন: বাড়ি ২৪, রোড ৭/এ, ব্লক বি (জেলা ও থানা সহ লিখুন)' : 'House, Road, Block, Landmark'}

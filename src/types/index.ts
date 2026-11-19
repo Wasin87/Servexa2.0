@@ -101,6 +101,7 @@ export interface Technician {
   nidVerified: boolean;
   skillVerified: boolean;
   platformVerified: boolean;
+  nidNumber?: string;
   nidFrontImage?: string;
   nidBackImage?: string;
   featured?: boolean;

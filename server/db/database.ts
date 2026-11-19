@@ -2,12 +2,12 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import type { PlatformRules, ServiceSubcategory, PricingRule } from '../../src/types/finance';
-import { initialCategories, initialTechnicians, demoUsers, initialBookings } from '../../src/data/seedData';
+import { initialCategories, ADMIN_EMAIL } from '../../src/data/seedData';
 
 export const DEFAULT_PLATFORM_RULES: PlatformRules = {
   version: 1,
   updatedAt: new Date().toISOString(),
-  updatedBy: 'user-admin-demo',
+  updatedBy: 'admin-wasin',
   general: {
     platformName: 'Servexa',
     businessTagline: 'Smart Home & Skilled Technician Platform (Bangladesh)',
@@ -1038,42 +1038,47 @@ function seedDatabaseIfEmpty(db: Database.Database): void {
   const existingRules = db.prepare('SELECT id FROM platform_rules WHERE id = 1').get();
   const now = new Date().toISOString();
 
+  // Purge any legacy dummy/demo seed rows from previous runs
+  db.exec(`
+    DELETE FROM wallet_ledger WHERE id LIKE 'led-seed-%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM withdrawal_requests WHERE id LIKE 'wd-seed-%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM cash_deposits WHERE cash_collection_id LIKE 'cc-seed-%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM cash_collections WHERE id LIKE 'cc-seed-%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM payment_transactions WHERE id LIKE 'ptx-seed-%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM booking_price_snapshots WHERE id LIKE 'snap-book-%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM bookings WHERE id IN ('book-1','book-2','book-3','book-4','book-5','book-6','book-7','book-8','book-9') OR customer_id = 'user-cust-demo';
+    DELETE FROM payout_accounts WHERE id LIKE 'pa-tech%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM technician_services WHERE id LIKE 'ts-tech-%' OR technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM wallets WHERE technician_id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM technicians WHERE id IN ('tech-1','tech-2','tech-3','tech-4','tech-5','tech-6');
+    DELETE FROM users WHERE id IN ('user-cust-demo','user-admin-demo','user-tech-1','user-tech-2','user-tech-3','user-tech-4','user-tech-5','user-tech-6') OR email LIKE '%@servexa.demo';
+  `);
+
   if (!existingRules) {
     db.prepare(
       'INSERT INTO platform_rules (id, version, rules_json, updated_at, updated_by) VALUES (1, 1, ?, ?, ?)'
-    ).run(JSON.stringify(DEFAULT_PLATFORM_RULES), now, 'user-admin-demo');
+    ).run(JSON.stringify(DEFAULT_PLATFORM_RULES), now, 'admin-wasin');
 
     db.prepare(
       'INSERT INTO rule_versions (id, version, changed_by, summary, rules_json, created_at) VALUES (?, 1, ?, ?, ?, ?)'
-    ).run('rv-1', 'user-admin-demo', 'Initial centralized Servexa rules (90/10 commission, ৳500 reserve)', JSON.stringify(DEFAULT_PLATFORM_RULES), now);
+    ).run('rv-1', 'admin-wasin', 'Initial centralized Servexa rules (90/10 commission, ৳500 reserve)', JSON.stringify(DEFAULT_PLATFORM_RULES), now);
   }
 
-  // Seed users from demoUsers
-  const upsertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, phone, password, role, avatar, division, district, city, area, address, nid_verified, phone_verified, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const u of Object.values(demoUsers)) {
-    upsertUser.run(
-      u.id,
-      u.name,
-      u.email.toLowerCase(),
-      u.phone,
-      u.role === 'ADMIN' ? 'Admin@123' : 'Servexa@123',
-      u.role,
-      u.avatar,
-      u.division || 'Dhaka',
-      u.district || u.city,
-      u.city,
-      u.area,
-      u.address || '',
-      u.nidVerified ? 1 : 0,
-      u.phoneVerified ? 1 : 0,
-      u.createdAt
-    );
-  }
+  // Upsert designated Admin account
+  db.prepare(`
+    INSERT INTO users (id, name, email, phone, password, role, avatar, division, district, city, area, address, nid_verified, phone_verified, created_at)
+    VALUES (?, ?, ?, ?, ?, 'ADMIN', '', 'Dhaka', 'Dhaka', 'Dhaka', '', '', 1, 1, ?)
+    ON CONFLICT(email) DO UPDATE SET role = 'ADMIN', password = excluded.password
+  `).run(
+    'admin-wasin',
+    'Servexa Admin',
+    ADMIN_EMAIL.toLowerCase(),
+    '',
+    'W@sin1234',
+    now
+  );
 
-  // Seed categories preserving initialCategories
+  // Seed categories preserving initialCategories catalog
   const upsertCat = db.prepare(`
     INSERT OR IGNORE INTO service_categories (
       id, name_en, name_bn, icon, description_en, description_bn, starting_price,
@@ -1105,7 +1110,6 @@ function seedDatabaseIfEmpty(db: Database.Database): void {
       JSON.stringify(cat.tags || []),
       now
     );
-    // Ensure a baseline category-level pricing rule exists if no subcategories seeded for it
     const minP = Math.max(150, Math.round(cat.startingPrice * 0.8));
     const maxP = Math.round(cat.startingPrice * 2.5);
     insertGenericRule.run(
@@ -1120,7 +1124,7 @@ function seedDatabaseIfEmpty(db: Database.Database): void {
     );
   }
 
-  // Seed rich subcategories & pricing rules
+  // Seed subcategories & baseline pricing rules
   const insertSub = db.prepare(`
     INSERT OR IGNORE INTO service_subcategories (id, category_id, name_en, name_bn, description_en, description_bn, icon, active, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1174,332 +1178,11 @@ function seedDatabaseIfEmpty(db: Database.Database): void {
     );
   }
 
-  // Seed technicians and wallets
-  const upsertTech = db.prepare(`
-    INSERT OR IGNORE INTO technicians (
-      id, user_id, name, email, phone, avatar, city, district, division, primary_area,
-      visiting_fee, starting_price, skills_json, skill_verified, platform_verified, nid_verified,
-      availability, rating, completed_jobs, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const upsertWallet = db.prepare(`
-    INSERT OR IGNORE INTO wallets (technician_id, custom_reserve_balance, booking_restricted, restriction_reason, updated_at)
-    VALUES (?, NULL, 0, NULL, ?)
-  `);
-  const upsertTechUser = db.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, phone, password, role, avatar, division, district, city, area, nid_verified, phone_verified, created_at)
-    VALUES (?, ?, ?, ?, 'demo1234', 'TECHNICIAN', ?, ?, ?, ?, ?, ?, 1, ?)
-  `);
-
-  for (const tech of initialTechnicians) {
-    const techEmail = tech.email || `${tech.id}@servexa.demo`;
-    upsertTechUser.run(
-      tech.userId,
-      tech.name,
-      techEmail,
-      tech.phone,
-      tech.avatar,
-      tech.division || 'Dhaka',
-      tech.district || tech.city,
-      tech.city,
-      tech.primaryArea,
-      tech.nidVerified ? 1 : 0,
-      now
-    );
-    upsertTech.run(
-      tech.id,
-      tech.userId,
-      tech.name,
-      techEmail,
-      tech.phone,
-      tech.avatar,
-      tech.city,
-      tech.district || tech.city,
-      tech.division || 'Dhaka',
-      tech.primaryArea,
-      tech.visitingFee,
-      tech.startingPrice,
-      JSON.stringify(tech.skills || []),
-      tech.skillVerified ? 1 : 0,
-      tech.platformVerified ? 1 : 0,
-      tech.nidVerified ? 1 : 0,
-      tech.availability,
-      tech.rating,
-      tech.completedJobs,
-      now
-    );
-    upsertWallet.run(tech.id, now);
-  }
-
-  // Seed distinct technician_services for each technician based on their trade skills
-  const seedTechSvc = db.prepare(`
-    INSERT OR IGNORE INTO technician_services (
-      id, technician_id, category_id, subcategory_id, pricing_rule_id, service_title_en, service_title_bn,
-      approved_price, approved_visiting_fee, approved_hourly_rate, approved_additional_hour_charge,
-      approved_emergency_charge, approved_night_charge, approved_weekend_charge, status, active, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-  `);
-  const techSeedServices: Array<{
-    techId: string;
-    subId: string;
-    ruleId: string;
-    catId: string;
-    en: string;
-    bn: string;
-    price: number;
-    visit: number;
-    hourly: number;
-    status: string;
-  }> = [
-    // tech-1: Rahim (Electrical & AC)
-    { techId: 'tech-1', subId: 'sub-fan-repair', ruleId: 'pr-sub-fan-repair', catId: 'electrical', en: 'Fan Repair', bn: 'ফ্যান মেরামত', price: 350, visit: 150, hourly: 200, status: 'CUSTOMIZED_PRICE' },
-    { techId: 'tech-1', subId: 'sub-wiring', ruleId: 'pr-sub-wiring', catId: 'electrical', en: 'Wiring & Short Circuit Fix', bn: 'ওয়্যারিং ও শর্ট সার্কিট', price: 500, visit: 200, hourly: 300, status: 'DEFAULT_PRICE' },
-    { techId: 'tech-1', subId: 'sub-ac-servicing', ruleId: 'pr-sub-ac-servicing', catId: 'ac_repair', en: 'AC Servicing', bn: 'এসি সার্ভিসিং', price: 800, visit: 200, hourly: 400, status: 'DEFAULT_PRICE' },
-    // tech-2: Karim (Plumbing)
-    { techId: 'tech-2', subId: 'sub-pipe-repair', ruleId: 'pr-sub-pipe-repair', catId: 'plumbing', en: 'Pipe Repair', bn: 'পানির পাইপ মেরামত', price: 420, visit: 200, hourly: 250, status: 'CUSTOMIZED_PRICE' },
-    { techId: 'tech-2', subId: 'sub-tap-install', ruleId: 'pr-sub-tap-install', catId: 'plumbing', en: 'Water Tap Installation', bn: 'পানির কল ও মিক্সার স্থাপন', price: 350, visit: 150, hourly: 200, status: 'DEFAULT_PRICE' },
-    { techId: 'tech-2', subId: 'sub-leakage-repair', ruleId: 'pr-sub-leakage-repair', catId: 'plumbing', en: 'Water Leakage Repair', bn: 'ওয়াটার লিকেজ ও বেসিন ড্রেন সমাধান', price: 450, visit: 200, hourly: 250, status: 'DEFAULT_PRICE' },
-    // tech-3: Tanvir (AC & Refrigerator)
-    { techId: 'tech-3', subId: 'sub-ac-gas', ruleId: 'pr-sub-ac-gas', catId: 'ac_repair', en: 'AC Gas Refill', bn: 'এসি গ্যাস রিফিল', price: 1850, visit: 200, hourly: 450, status: 'CUSTOMIZED_PRICE' },
-    { techId: 'tech-3', subId: 'sub-ac-repair', ruleId: 'pr-sub-ac-repair', catId: 'ac_repair', en: 'AC Repair & PCB Diagnostics', bn: 'এসি মেরামত ও সার্কিট বোর্ড চেক', price: 1000, visit: 200, hourly: 400, status: 'DEFAULT_PRICE' },
-    { techId: 'tech-3', subId: 'sub-fridge-repair', ruleId: 'pr-sub-fridge-repair', catId: 'refrigerator', en: 'Refrigerator Repair', bn: 'ফ্রিজ ও ডিপ ফ্রিজ মেরামত', price: 650, visit: 200, hourly: 300, status: 'CUSTOMIZED_PRICE' },
-    // tech-4: Selim (Carpentry & Painting)
-    { techId: 'tech-4', subId: 'sub-fan-repair', ruleId: 'pr-cat-carpentry', catId: 'carpentry', en: 'Carpentry & Locksmith', bn: 'কাঠ মিস্ত্রি ও লক সার্ভিস', price: 450, visit: 200, hourly: 250, status: 'CUSTOMIZED_PRICE' },
-    // tech-5: Kamrul (CCTV & Electrical)
-    { techId: 'tech-5', subId: 'sub-light-install', ruleId: 'pr-cat-cctv_installation', catId: 'cctv_installation', en: 'CCTV & Networking', bn: 'সিসিটিভি ও ওয়াইফাই সেটআপ', price: 850, visit: 250, hourly: 350, status: 'CUSTOMIZED_PRICE' },
-    { techId: 'tech-5', subId: 'sub-switch-repair', ruleId: 'pr-sub-switch-repair', catId: 'electrical', en: 'Switch & Socket Repair', bn: 'সুইচ বোর্ড ও সকেট মেরামত', price: 280, visit: 150, hourly: 180, status: 'CUSTOMIZED_PRICE' },
-    // tech-6: Jahidul (Washing Machine & Refrigerator)
-    { techId: 'tech-6', subId: 'sub-washing-machine', ruleId: 'pr-sub-washing-machine', catId: 'washing_machine', en: 'Washing Machine Repair', bn: 'ওয়াশিং মেশিন সার্ভিস ও মেরামত', price: 700, visit: 200, hourly: 350, status: 'CUSTOMIZED_PRICE' },
-    { techId: 'tech-6', subId: 'sub-fridge-repair', ruleId: 'pr-sub-fridge-repair', catId: 'refrigerator', en: 'Refrigerator Repair', bn: 'ফ্রিজ ও ডিপ ফ্রিজ মেরামত', price: 600, visit: 200, hourly: 300, status: 'DEFAULT_PRICE' },
-  ];
-  for (const s of techSeedServices) {
-    seedTechSvc.run(
-      `ts-${s.techId}-${s.subId}`,
-      s.techId,
-      s.catId,
-      s.subId,
-      s.ruleId,
-      s.en,
-      s.bn,
-      s.price,
-      s.visit,
-      s.hourly,
-      200,
-      150,
-      150,
-      100,
-      s.status,
-      now
-    );
-  }
-
-  // Seed distinct payout accounts for each technician
-  const seedPayoutAcct = db.prepare(`
-    INSERT OR IGNORE INTO payout_accounts (
-      id, technician_id, provider, account_title, account_number, bank_name, branch_name,
-      verification_status, verification_note, is_default, created_at, verified_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-  `);
-  seedPayoutAcct.run('pa-tech1-bkash', 'tech-1', 'bkash', 'Md. Rahim Ahmed', '01712345678', null, null, 'VERIFIED', 'NID & mobile ownership verified', now, now);
-  seedPayoutAcct.run('pa-tech2-nagad', 'tech-2', 'nagad', 'Karim Hossain', '01987654321', null, null, 'VERIFIED', 'Verified Nagad merchant/personal wallet', now, now);
-  seedPayoutAcct.run('pa-tech3-bkash', 'tech-3', 'bkash', 'Tanvir Islam', '01811223344', null, null, 'VERIFIED', 'Verified bKash payout account', now, now);
-  seedPayoutAcct.run('pa-tech4-rocket', 'tech-4', 'rocket', 'Selim Reza', '016443322119', null, null, 'VERIFIED', 'Verified Rocket account', now, now);
-  seedPayoutAcct.run('pa-tech5-bank', 'tech-5', 'bank', 'Kamrul Hasan', '1421070098341', 'BRAC Bank PLC', 'Gulshan Branch', 'VERIFIED', 'Bank account cheque leaf verified', now, now);
-  seedPayoutAcct.run('pa-tech6-nagad', 'tech-6', 'nagad', 'Jahidul Islam', '01766554433', null, null, 'VERIFIED', 'NID & Nagad account matched', now, now);
-
-  // Seed default promo codes
+  // Seed promo codes
   db.prepare(`
     INSERT OR IGNORE INTO promo_codes (code, description, discount_type, discount_value, max_discount, min_order_amount, active)
     VALUES
       ('SERVEXA50', 'Flat ৳50 off on services above ৳400', 'FLAT', 50, 50, 400, 1),
       ('FIRST10', '10% welcome discount up to ৳150', 'PERCENT', 10, 150, 300, 1)
   `).run();
-
-  // Seed initialBookings + snapshots + distinct per-technician ledger/payment/cash/withdrawal history
-  const bookingCountRow = db.prepare('SELECT COUNT(*) as c FROM bookings').get() as { c: number };
-  if (bookingCountRow.c === 0) {
-    const insertBooking = db.prepare(`
-      INSERT INTO bookings (
-        id, booking_number, customer_id, customer_name, customer_phone, customer_division, customer_district,
-        customer_city, customer_area, customer_address, technician_id, technician_name, technician_phone,
-        technician_avatar, category_id, subcategory_id, service_name_en, service_name_bn, problem_description,
-        date, time_slot, urgency, status, customer_confirmed_completion, payment_status, payment_method,
-        estimated_visiting_fee, estimated_labour_min, estimated_labour_max, estimated_total_min, estimated_total_max,
-        final_total, warranty_days, booking_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertSnap = db.prepare(`
-      INSERT INTO booking_price_snapshots (
-        id, booking_id, category_id, subcategory_id, technician_id, customer_id, service_name_en, service_name_bn,
-        service_price, visiting_fee, hourly_charge, additional_charges_total, emergency_charge, night_charge, weekend_charge,
-        material_cost, material_cost_commissionable, discount_amount, promo_code, subtotal, commissionable_amount,
-        platform_commission_percent, technician_earnings_percent, platform_commission_amount, technician_earnings_amount,
-        estimated_total, final_agreed_amount, rule_version, pricing_rule_id, currency, confirmed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?, 0, 0, NULL, ?, ?, 10, 90, ?, ?, ?, ?, 1, ?, 'BDT', ?)
-    `);
-
-    const resolveSubAndRule = (categoryId: string): { subId: string | null; ruleId: string } => {
-      switch (categoryId) {
-        case 'electrical':
-          return { subId: 'sub-fan-repair', ruleId: 'pr-sub-fan-repair' };
-        case 'ac_repair':
-          return { subId: 'sub-ac-gas', ruleId: 'pr-sub-ac-gas' };
-        case 'plumbing':
-          return { subId: 'sub-pipe-repair', ruleId: 'pr-sub-pipe-repair' };
-        case 'refrigerator':
-          return { subId: 'sub-fridge-repair', ruleId: 'pr-sub-fridge-repair' };
-        case 'washing_machine':
-          return { subId: 'sub-washing-machine', ruleId: 'pr-sub-washing-machine' };
-        default:
-          return { subId: null, ruleId: `pr-cat-${categoryId}` };
-      }
-    };
-
-    for (const b of initialBookings) {
-      const { subId, ruleId } = resolveSubAndRule(b.categoryId);
-      const servicePrice = b.invoice ? b.invoice.labourCost : b.estimatedLabourMin || 400;
-      const visitingFee = b.invoice ? b.invoice.visitingFee : b.estimatedVisitingFee || 200;
-      const materialCost = b.invoice ? b.invoice.partsCost : 0;
-      const total = b.finalTotal || visitingFee + servicePrice + materialCost;
-      const commissionable = servicePrice; // visiting fee & material cost non-commissionable per default policy
-      const commissionAmt = Math.round(commissionable * 0.1 * 100) / 100;
-      const techEarnings = Math.round((commissionable - commissionAmt) * 100) / 100 + visitingFee + materialCost;
-
-      insertBooking.run(
-        b.id,
-        b.bookingNumber,
-        b.customerId,
-        b.customerName,
-        b.customerPhone,
-        b.customerDivision || 'Dhaka',
-        b.customerDistrict || b.customerCity,
-        b.customerCity,
-        b.customerArea,
-        b.customerAddress,
-        b.technicianId,
-        b.technicianName,
-        b.technicianPhone,
-        b.technicianAvatar,
-        b.categoryId,
-        subId,
-        b.serviceNameEn,
-        b.serviceNameBn,
-        b.problemDescription,
-        b.date,
-        b.timeSlot,
-        b.urgency,
-        b.status,
-        b.status === 'COMPLETED' ? 1 : 0,
-        b.paymentStatus,
-        b.paymentMethod,
-        b.estimatedVisitingFee,
-        b.estimatedLabourMin,
-        b.estimatedLabourMax,
-        b.estimatedTotalMin,
-        b.estimatedTotalMax,
-        b.finalTotal ?? null,
-        b.warrantyDays,
-        JSON.stringify(b),
-        b.createdAt,
-        b.updatedAt
-      );
-
-      insertSnap.run(
-        `snap-${b.id}`,
-        b.id,
-        b.categoryId,
-        subId,
-        b.technicianId,
-        b.customerId,
-        b.serviceNameEn,
-        b.serviceNameBn,
-        servicePrice,
-        visitingFee,
-        materialCost,
-        total,
-        commissionable,
-        commissionAmt,
-        techEarnings,
-        total,
-        total,
-        ruleId,
-        b.createdAt
-      );
-    }
-
-    const todayIso = new Date().toISOString();
-    const deadlineFuture = new Date(Date.now() + 40 * 3600 * 1000).toISOString();
-    const graceFuture = new Date(Date.now() + 52 * 3600 * 1000).toISOString();
-
-    // Seed verified payment transactions (each tied strictly to its owning technician)
-    const payIns = db.prepare(`
-      INSERT OR IGNORE INTO payment_transactions (
-        id, booking_id, customer_id, technician_id, method, amount, currency, status,
-        provider_tx_id, provider_status, provider_mode, idempotency_key, created_at, verified_at, refunded_amount
-      ) VALUES (?, ?, ?, ?, ?, ?, 'BDT', 'VERIFIED', ?, 'Completed', 'SANDBOX', ?, ?, ?, 0)
-    `);
-    payIns.run('ptx-seed-book3', 'book-3', 'user-cust-demo', 'tech-1', 'bkash', 1100, 'BK-SEED-2026-0102', 'seed-idem-book3', '2026-09-25T17:18:00Z', '2026-09-25T17:20:00Z');
-    payIns.run('ptx-seed-book9', 'book-9', 'user-cust-demo', 'tech-1', 'bkash', 700, 'BK-SEED-2026-0142', 'seed-idem-book9', todayIso, todayIso);
-    payIns.run('ptx-seed-book4', 'book-4', 'user-cust-demo', 'tech-3', 'bkash', 2300, 'BK-SEED-2026-0112', 'seed-idem-book4', todayIso, todayIso);
-    payIns.run('ptx-seed-book5', 'book-5', 'user-cust-demo', 'tech-3', 'nagad', 1250, 'NG-SEED-2026-0119', 'seed-idem-book5', todayIso, todayIso);
-    payIns.run('ptx-seed-book7', 'book-7', 'user-cust-demo', 'tech-5', 'bkash', 2150, 'BK-SEED-2026-0131', 'seed-idem-book7', todayIso, todayIso);
-    payIns.run('ptx-seed-book8', 'book-8', 'user-cust-demo', 'tech-6', 'nagad', 1200, 'NG-SEED-2026-0138', 'seed-idem-book8', todayIso, todayIso);
-
-    // Seed cash collection awaiting deposit for tech-4 (book-6: ৳1250, 90% share = ৳1160, 10% comm = ৳90)
-    db.prepare(`
-      INSERT OR IGNORE INTO cash_collections (
-        id, booking_id, booking_number, technician_id, technician_name, customer_id,
-        amount_collected, commission_amount, technician_share_amount, status,
-        collected_at, deadline_at, grace_ends_at, reminder_count, booking_restricted_applied
-      ) VALUES (
-        'cc-seed-book6', 'book-6', 'SRV-2026-000124', 'tech-4', 'সেলিম রেজা', 'user-cust-demo',
-        1250, 90, 1160, 'CASH_PENDING', ?, ?, ?, 0, 0
-      )
-    `).run(todayIso, deadlineFuture, graceFuture);
-
-    // Seed a completed payout for tech-3 so each technician exhibits unique withdrawal history
-    db.prepare(`
-      INSERT OR IGNORE INTO withdrawal_requests (
-        id, technician_id, payout_account_id, provider, account_number_masked,
-        requested_amount, fee_amount, net_payout_amount, status, idempotency_key,
-        provider_reference, admin_note, requested_at, processed_at, processed_by
-      ) VALUES (
-        'wd-seed-tech3', 'tech-3', 'pa-tech3-bkash', 'bkash', '018****3344',
-        600, 0, 600, 'COMPLETED', 'seed-wd-tech3',
-        'BK-PAYOUT-99321', 'Settled to Tanvir Islam verified bKash wallet', ?, ?, 'user-admin-demo'
-      )
-    `).run(todayIso, todayIso);
-
-    // Seed distinct per-technician ledger entries (tech-1 through tech-6)
-    const ledgerIns = db.prepare(`
-      INSERT OR IGNORE INTO wallet_ledger (id, technician_id, booking_id, withdrawal_id, payment_tx_id, entry_type, amount, direction, description, reference_key, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYSTEM', ?)
-    `);
-    // tech-1 (রহিম আহমেদ): Available ৳1,685 | Reserve ৳500 | Withdrawable ৳1,185
-    ledgerIns.run('led-seed-1', 'tech-1', 'book-3', null, 'ptx-seed-book3', 'EARNING_AVAILABLE', 1030, 'CREDIT', 'Net earnings from booking SRV-2026-000105 (bKash verified)', 'EARN_AVAIL_book-3', '2026-09-25T17:20:00Z');
-    ledgerIns.run('led-seed-2', 'tech-1', 'book-3', null, 'ptx-seed-book3', 'COMMISSION_DEDUCTED', 70, 'DEBIT', 'Servexa 10% commission on commissionable service ৳700', 'COMM_book-3', '2026-09-25T17:20:00Z');
-    ledgerIns.run('led-seed-1b', 'tech-1', 'book-9', null, 'ptx-seed-book9', 'EARNING_AVAILABLE', 655, 'CREDIT', 'Net earnings from booking SRV-2026-000142 (bKash verified)', 'EARN_AVAIL_book-9', todayIso);
-    ledgerIns.run('led-seed-1c', 'tech-1', 'book-9', null, 'ptx-seed-book9', 'COMMISSION_DEDUCTED', 45, 'DEBIT', 'Servexa 10% commission on commissionable service ৳450', 'COMM_book-9', todayIso);
-
-    // tech-2 (করিম হোসেন): Available ৳715 | Reserve ৳500 | Withdrawable ৳215
-    ledgerIns.run('led-seed-3', 'tech-2', 'book-2', null, null, 'EARNING_AVAILABLE', 715, 'CREDIT', 'Net earnings from booking SRV-2026-000098 (Cash deposit verified)', 'EARN_AVAIL_book-2', '2026-09-20T13:00:00Z');
-    ledgerIns.run('led-seed-4', 'tech-2', 'book-2', null, null, 'COMMISSION_DEDUCTED', 35, 'DEBIT', 'Servexa 10% commission on commissionable service ৳350', 'COMM_book-2', '2026-09-20T13:00:00Z');
-
-    // tech-3 (তানভীর ইসলাম): Lifetime ৳3,280 | Pending ৳1,160 | Available ৳1,520 (after ৳600 withdrawal) | Withdrawable ৳1,020 | Withdrawn ৳600
-    ledgerIns.run('led-seed-5', 'tech-3', 'book-4', null, 'ptx-seed-book4', 'EARNING_AVAILABLE', 2120, 'CREDIT', 'Net earnings from booking SRV-2026-000112 (bKash verified)', 'EARN_AVAIL_book-4', todayIso);
-    ledgerIns.run('led-seed-6', 'tech-3', 'book-4', null, 'ptx-seed-book4', 'COMMISSION_DEDUCTED', 180, 'DEBIT', 'Servexa 10% commission on commissionable service ৳1800', 'COMM_book-4', todayIso);
-    ledgerIns.run('led-seed-7', 'tech-3', 'book-5', null, 'ptx-seed-book5', 'EARNING_PENDING', 1160, 'CREDIT', 'Escrow earnings held until completion of SRV-2026-000119 (Nagad)', 'EARN_PEND_book-5', todayIso);
-    ledgerIns.run('led-seed-8', 'tech-3', 'book-5', null, 'ptx-seed-book5', 'COMMISSION_DEDUCTED', 90, 'DEBIT', 'Servexa 10% commission on commissionable service ৳900', 'COMM_book-5', todayIso);
-    ledgerIns.run('led-seed-9', 'tech-3', null, 'wd-seed-tech3', null, 'WITHDRAWAL_RESERVED', 600, 'HOLD', 'Withdrawal reserved for bKash payout 018****3344', 'WD_RES_wd-seed-tech3', todayIso);
-    ledgerIns.run('led-seed-10', 'tech-3', null, 'wd-seed-tech3', null, 'WITHDRAWAL_COMPLETED', 600, 'DEBIT', 'Payout completed via bKash (Ref: BK-PAYOUT-99321)', 'WD_COMP_wd-seed-tech3', todayIso);
-
-    // tech-5 (কামরুল হাসান): Available ৳2,000 | Reserve ৳500 | Withdrawable ৳1,500
-    ledgerIns.run('led-seed-11', 'tech-5', 'book-7', null, 'ptx-seed-book7', 'EARNING_AVAILABLE', 2000, 'CREDIT', 'Net earnings from booking SRV-2026-000131 (bKash verified)', 'EARN_AVAIL_book-7', todayIso);
-    ledgerIns.run('led-seed-12', 'tech-5', 'book-7', null, 'ptx-seed-book7', 'COMMISSION_DEDUCTED', 150, 'DEBIT', 'Servexa 10% commission on commissionable service ৳1500', 'COMM_book-7', todayIso);
-
-    // tech-6 (জাহিদুল ইসলাম): Available ৳1,115 | Reserve ৳500 | Withdrawable ৳615
-    ledgerIns.run('led-seed-13', 'tech-6', 'book-8', null, 'ptx-seed-book8', 'EARNING_AVAILABLE', 1115, 'CREDIT', 'Net earnings from booking SRV-2026-000138 (Nagad verified)', 'EARN_AVAIL_book-8', todayIso);
-    ledgerIns.run('led-seed-14', 'tech-6', 'book-8', null, 'ptx-seed-book8', 'COMMISSION_DEDUCTED', 85, 'DEBIT', 'Servexa 10% commission on commissionable service ৳850', 'COMM_book-8', todayIso);
-  }
 }

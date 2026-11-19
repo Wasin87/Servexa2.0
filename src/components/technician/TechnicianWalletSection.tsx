@@ -18,6 +18,7 @@ import {
   fetchWalletDashboard,
   requestWithdrawal,
   submitCashDepositReference,
+  syncServerSession,
 } from '../../services/financeApi';
 import type {
   CashCollectionRecord,
@@ -42,7 +43,7 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [cashCollections, setCashCollections] = useState<CashCollectionRecord[]>([]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -137,10 +138,15 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
   };
 
   const loadWallet = async () => {
-    if (!authTokenReady) return;
     setLoading(true);
     setErrorMsg(null);
     try {
+      if (!authTokenReady && currentUser) {
+        await syncServerSession(
+          currentUser,
+          currentUser.role === 'TECHNICIAN' ? technicianId : undefined
+        );
+      }
       const targetParam = currentUser?.role === 'ADMIN' ? technicianId : undefined;
       const data = await fetchWalletDashboard(targetParam);
       setWallet(data.wallet);
@@ -160,7 +166,10 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
   };
 
   useEffect(() => {
-    if (!authTokenReady) return;
+    if (!authTokenReady || !currentUser) {
+      setLoading(false);
+      return;
+    }
     void loadWallet();
   }, [technicianId, authTokenReady, currentUser?.id]);
 
@@ -236,8 +245,9 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
 
   if (loading && !wallet) {
     return (
-      <div className="p-6 text-center text-xs text-zinc-500">
-        {isBangla ? 'টেকনিশিয়ান ওয়ালেট ও রিজার্ভ লেজার লোড হচ্ছে...' : 'Loading Technician Wallet & Reserve Ledger...'}
+      <div className="p-6 text-center text-xs text-zinc-500 flex items-center justify-center gap-2">
+        <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />
+        <span>{isBangla ? 'টেকনিশিয়ান ওয়ালেট ও রিজার্ভ লেজার লোড হচ্ছে...' : 'Loading Technician Wallet & Reserve Ledger...'}</span>
       </div>
     );
   }
@@ -295,9 +305,10 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
             <button
               type="button"
               onClick={() => void loadWallet()}
-              className="px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+              disabled={loading}
+              className="px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0 disabled:opacity-60"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>{isBangla ? 'লেজার রিফ্রেশ করুন' : 'Refresh Ledger'}</span>
             </button>
           </div>
@@ -370,6 +381,27 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
               <div className="text-base sm:text-xl font-black text-emerald-600 tabular-nums">৳{wallet.totalWithdrawn.toLocaleString()}</div>
             </div>
           </div>
+        </div>
+      )}
+
+      {!wallet && !loading && (
+        <div className="p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div>
+            <div className="font-black text-zinc-900 dark:text-white">
+              {isBangla ? 'ওয়ালেট লেজার প্রস্তুত' : 'Technician Wallet Ledger'}
+            </div>
+            <div className="text-zinc-500">
+              {isBangla ? 'সর্বশেষ আর্থিক তথ্য দেখতে রিফ্রেশ বাটনে ক্লিক করুন।' : 'Click Refresh to fetch latest financial ledger.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadWallet()}
+            className="px-4 py-2 rounded-xl bg-orange-600 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>{isBangla ? 'লেজার লোড করুন' : 'Load Wallet'}</span>
+          </button>
         </div>
       )}
 

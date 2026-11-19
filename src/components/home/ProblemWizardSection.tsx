@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, ArrowRight, ShieldCheck, Star, Clock, AlertCircle, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Sparkles, Star, CheckCircle2, User, Lock } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useApp } from '../../contexts/AppContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { diagnoseProblemWithRules, DiagnosisResult } from '../../services/problemDiagnosis';
-import { diagnoseWithAI } from '../../services/geminiService';
 
 export const ProblemWizardSection: React.FC = () => {
   const { t, isBangla } = useLanguage();
   const { categories, technicians } = useApp();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const [inputQuery, setInputQuery] = useState<string>('');
@@ -22,20 +23,14 @@ export const ProblemWizardSection: React.FC = () => {
     { bn: 'বাসার দরজার তালা আটকে গেছে চাবি খুলছে না', en: 'Door lock jammed and key stuck', cat: 'locksmith' },
   ];
 
-  const handleDiagnose = async (queryToUse?: string) => {
+  const handleDiagnose = (queryToUse?: string) => {
     const text = queryToUse !== undefined ? queryToUse : inputQuery;
     if (!text.trim()) return;
 
     setIsDiagnosing(true);
-    try {
-      const result = await diagnoseWithAI(text, categories);
-      setDiagnosis(result);
-    } catch {
-      const result = diagnoseProblemWithRules(text, categories);
-      setDiagnosis(result);
-    } finally {
-      setIsDiagnosing(false);
-    }
+    const result = diagnoseProblemWithRules(text, categories);
+    setDiagnosis(result);
+    setIsDiagnosing(false);
   };
 
   // Find technicians matching the diagnosed category
@@ -166,11 +161,17 @@ export const ProblemWizardSection: React.FC = () => {
                     >
                       <div>
                         <div className="flex items-center gap-2.5 mb-2.5">
-                          <img
-                            src={tech.avatar}
-                            alt={tech.name}
-                            className="w-10 h-10 rounded-full object-cover border border-orange-500"
-                          />
+                          {tech.avatar ? (
+                            <img
+                              src={tech.avatar}
+                              alt={tech.name}
+                              className="w-10 h-10 rounded-full object-cover border border-orange-500"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-orange-50 dark:bg-orange-950/50 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800 flex items-center justify-center">
+                              <User className="w-5 h-5" />
+                            </div>
+                          )}
                           <div>
                             <div className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate">
                               {tech.name}
@@ -178,25 +179,24 @@ export const ProblemWizardSection: React.FC = () => {
                             <div className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
                               <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                               <span>{tech.rating}</span>
-                              <span className="text-zinc-400 font-normal">({tech.completedJobs} কাজ)</span>
+                              <span className="text-zinc-400 font-normal">({tech.experienceYears || 0} {isBangla ? 'বছর' : 'yrs'})</span>
                             </div>
                           </div>
-                        </div>
-
-                        {/* Match reasons */}
-                        <div className="space-y-1 text-[11px] text-zinc-600 dark:text-zinc-400 mb-3">
-                          <div className="text-emerald-600 dark:text-emerald-400 font-medium">✓ ৯২% স্মার্ট ম্যাচ স্কোর</div>
-                          <div>✓ {tech.primaryArea}, ঢাকা</div>
-                          <div>✓ {tech.warrantyPeriodDays} দিনের ফ্রি ওয়ারেন্টি</div>
                         </div>
                       </div>
 
                       <button
                         type="button"
-                        onClick={() => navigate(`/book?techId=${tech.id}&categoryId=${diagnosis.categoryId}&desc=${encodeURIComponent(inputQuery)}`)}
-                        className="w-full py-2 text-center text-xs font-bold rounded-lg bg-orange-600 hover:bg-orange-500 text-white transition-colors"
+                        disabled={!isAuthenticated}
+                        onClick={isAuthenticated ? () => navigate(`/book?techId=${tech.id}&categoryId=${diagnosis.categoryId}&desc=${encodeURIComponent(inputQuery)}`) : undefined}
+                        className={`w-full py-2 text-center text-xs font-bold rounded-lg transition-colors inline-flex items-center justify-center gap-1 ${
+                          isAuthenticated
+                            ? 'bg-orange-600 hover:bg-orange-500 text-white cursor-pointer'
+                            : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed pointer-events-none'
+                        }`}
                       >
-                        {t.actions.bookNow}
+                        {!isAuthenticated && <Lock className="w-3 h-3" />}
+                        <span>{isBangla ? 'বুক নাও' : 'Book Now'}</span>
                       </button>
                     </div>
                   ))}

@@ -55,7 +55,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }
 
   const otherPartyName = isCustomer ? booking.technicianName : booking.customerName;
   const otherPartyPhone = isCustomer ? booking.technicianPhone : booking.customerPhone;
-  const otherPartyAvatar = isCustomer ? booking.technicianAvatar : (currentUser?.avatar || '/src/assets/images/tech_portrait_senior_1794936426060.jpg');
+  const otherPartyAvatar = isCustomer ? booking.technicianAvatar : (currentUser?.avatar || '');
 
   // Suggestions tailored ONLY to Customer vs ONLY to Technician
   const customerChips = [
@@ -84,11 +84,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }
         <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-950">
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative shrink-0">
-              <img
-                src={otherPartyAvatar}
-                alt={otherPartyName}
-                className="w-10 h-10 rounded-full object-cover border-2 border-orange-500 shadow-xs"
-              />
+              {otherPartyAvatar ? (
+                <img
+                  src={otherPartyAvatar}
+                  alt={otherPartyName}
+                  className="w-10 h-10 rounded-full object-cover border-2 border-orange-500 shadow-xs"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-orange-600 text-white font-black flex items-center justify-center border-2 border-orange-500 shadow-xs">
+                  {(otherPartyName || 'U').charAt(0).toUpperCase()}
+                </div>
+              )}
               <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full animate-pulse" />
             </div>
 

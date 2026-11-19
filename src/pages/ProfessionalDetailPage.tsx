@@ -5,17 +5,14 @@ import {
   ShieldCheck,
   MapPin,
   Clock,
-  Phone,
   MessageSquare,
-  Award,
-  Calendar,
   CheckCircle2,
-  Sparkles,
   ArrowLeft,
-  Heart
+  Heart,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../contexts/AuthContext';
 import { HealthScoreCard } from '../components/common/HealthScoreCard';
 import { BeforeAfterSlider } from '../components/common/BeforeAfterSlider';
 import { ChatModal } from '../components/common/ChatModal';
@@ -27,6 +24,7 @@ export const ProfessionalDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { technicians, categories, reviews, toggleFavorite, isFavorite, bookings } = useApp();
   const { t, isBangla } = useLanguage();
+  const { currentUser, isAuthenticated } = useAuth();
 
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -37,8 +35,7 @@ export const ProfessionalDetailPage: React.FC = () => {
         id &&
         (tech.name.toLowerCase().includes(decodeURIComponent(id).toLowerCase()) ||
           decodeURIComponent(id).toLowerCase().includes(tech.name.toLowerCase()))
-    ) ||
-    technicians[0];
+    );
 
   if (!technician) {
     return (
@@ -56,15 +53,16 @@ export const ProfessionalDetailPage: React.FC = () => {
   const techReviews = reviews.filter((r) => r.technicianId === technician.id);
   const isSaved = isFavorite(technician.id);
 
-  // Fake dummy active booking if user wants to chat directly
-  const activeBooking = bookings.find((b) => b.technicianId === technician.id) || {
+  const activeBooking = bookings.find(
+    (b) => b.technicianId === technician.id && (!currentUser || b.customerId === currentUser.id)
+  ) || {
     id: `book-chat-${technician.id}`,
     bookingNumber: 'SRV-CHAT',
-    customerId: 'user-cust-demo',
-    customerName: 'Customer',
-    customerPhone: '01700-000000',
-    customerCity: technician.city,
-    customerArea: technician.primaryArea,
+    customerId: currentUser?.id || '',
+    customerName: currentUser?.name || 'Customer',
+    customerPhone: currentUser?.phone || '',
+    customerCity: technician.city || 'Dhaka',
+    customerArea: technician.primaryArea || 'Dhaka',
     customerAddress: 'Direct Inquiry',
     technicianId: technician.id,
     technicianName: technician.name,
@@ -89,15 +87,14 @@ export const ProfessionalDetailPage: React.FC = () => {
     paymentMethod: 'cash' as const,
     warrantyDays: technician.warrantyPeriodDays,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
 
   return (
     <div className="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-      {/* Back Button */}
       <button
         onClick={() => navigate(-1)}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors cursor-pointer"
       >
         <ArrowLeft className="w-4 h-4" />
         <span>{t.actions.back}</span>
@@ -106,14 +103,19 @@ export const ProfessionalDetailPage: React.FC = () => {
       {/* Main Profile Card */}
       <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 border border-zinc-200 dark:border-zinc-800 shadow-xl">
         <div className="flex flex-col lg:flex-row justify-between gap-6 lg:gap-8 items-start">
-          {/* Avatar and Info */}
           <div className="flex flex-col sm:flex-row gap-5 items-start sm:items-center">
             <div className="relative">
-              <img
-                src={technician.avatar}
-                alt={technician.name}
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl object-cover border-2 border-orange-500 shadow-md"
-              />
+              {technician.avatar ? (
+                <img
+                  src={technician.avatar}
+                  alt={technician.name}
+                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl object-cover border-2 border-orange-500 shadow-md"
+                />
+              ) : (
+                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-orange-600 text-white font-black text-2xl flex items-center justify-center border-2 border-orange-500 shadow-md">
+                  {(technician.name || 'T').slice(0, 2).toUpperCase()}
+                </div>
+              )}
               <span
                 className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 ${
                   technician.availability === 'available'
@@ -139,18 +141,25 @@ export const ProfessionalDetailPage: React.FC = () => {
 
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
-                <span>{technician.primaryArea}, {technician.city}</span>
-                <span>·</span>
-                <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                <span>{technician.workingHours}</span>
+                <span>
+                  {technician.primaryArea || 'Dhaka'}, {technician.city || 'Dhaka'}
+                </span>
+                {technician.workingHours && (
+                  <>
+                    <span>·</span>
+                    <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>{technician.workingHours}</span>
+                  </>
+                )}
               </div>
 
-              {/* Rating and Experience Badges */}
               <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
                 <div className="flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400">
                   <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
                   <span>{technician.rating}</span>
-                  <span className="text-zinc-400 font-normal">({technician.reviewCount} {t.tech.reviews})</span>
+                  <span className="text-zinc-400 font-normal">
+                    ({technician.reviewCount} {t.tech.reviews})
+                  </span>
                 </div>
                 <span>·</span>
                 <span className="font-semibold text-zinc-700 dark:text-zinc-300">
@@ -164,7 +173,6 @@ export const ProfessionalDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Action Callouts */}
           <div className="flex flex-col sm:flex-row lg:flex-col gap-3 w-full lg:w-auto shrink-0">
             <div className="text-left lg:text-right">
               <div className="text-xs text-zinc-400">{t.tech.visitingFee}</div>
@@ -182,8 +190,8 @@ export const ProfessionalDetailPage: React.FC = () => {
               </Link>
               <button
                 type="button"
-                onClick={() => setChatOpen(true)}
-                className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors"
+                onClick={() => (isAuthenticated ? setChatOpen(true) : navigate('/login'))}
+                className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
                 title={t.actions.sendMessage}
               >
                 <MessageSquare className="w-4 h-4" />
@@ -191,7 +199,7 @@ export const ProfessionalDetailPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => toggleFavorite(technician.id)}
-                className={`p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${
+                className={`p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
                   isSaved ? 'text-rose-500' : 'text-zinc-400'
                 }`}
                 title="Save Favorite"
@@ -205,19 +213,35 @@ export const ProfessionalDetailPage: React.FC = () => {
         {/* Verification Status Chips */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-6 mt-6 border-t border-zinc-100 dark:border-zinc-800/80 text-xs">
           <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <CheckCircle2
+              className={`w-4 h-4 shrink-0 ${
+                technician.phoneVerified ? 'text-emerald-500' : 'text-zinc-300'
+              }`}
+            />
             <span>{t.tech.phoneVerified}</span>
           </div>
           <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <CheckCircle2
+              className={`w-4 h-4 shrink-0 ${
+                technician.nidVerified ? 'text-emerald-500' : 'text-zinc-300'
+              }`}
+            />
             <span>{t.tech.nidVerified}</span>
           </div>
           <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <CheckCircle2
+              className={`w-4 h-4 shrink-0 ${
+                technician.skillVerified ? 'text-emerald-500' : 'text-zinc-300'
+              }`}
+            />
             <span>{t.tech.skillVerified}</span>
           </div>
           <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <CheckCircle2
+              className={`w-4 h-4 shrink-0 ${
+                technician.platformVerified ? 'text-emerald-500' : 'text-zinc-300'
+              }`}
+            />
             <span>{t.tech.platformVerified}</span>
           </div>
         </div>
@@ -225,19 +249,17 @@ export const ProfessionalDetailPage: React.FC = () => {
 
       {/* Grid: Details, Health Score & Portfolio */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: About & Skills */}
         <div className="lg:col-span-7 space-y-6">
-          {/* About */}
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 space-y-3">
             <h3 className="font-bold text-base text-zinc-900 dark:text-zinc-100">
               {t.tech.about}
             </h3>
             <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              {isBangla ? technician.aboutBn : technician.aboutEn}
+              {(isBangla ? technician.aboutBn || technician.bioBn : technician.aboutEn || technician.bioEn) ||
+                (isBangla ? 'বিস্তারিত বায়ো এখনো যুক্ত করা হয়নি।' : 'No bio provided yet.')}
             </p>
           </div>
 
-          {/* Skills & Service Areas */}
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 space-y-4">
             <div>
               <h3 className="font-bold text-xs uppercase tracking-wider text-zinc-500 mb-2">
@@ -263,7 +285,7 @@ export const ProfessionalDetailPage: React.FC = () => {
                 {t.tech.serviceAreas}
               </h3>
               <div className="flex flex-wrap gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-                {technician.serviceAreas.map((area, idx) => (
+                {technician.serviceAreas.map((area) => (
                   <span key={area} className="bg-stone-100 dark:bg-zinc-800 px-2.5 py-1 rounded-md">
                     {area}
                   </span>
@@ -283,7 +305,7 @@ export const ProfessionalDetailPage: React.FC = () => {
                     technician.primaryArea || 'Dhaka',
                     '',
                     technician.id,
-                    technician.district || technician.city
+                    technician.district || technician.city || 'Dhaka'
                   );
               const radiusMeters = Math.max(1500, (technician.serviceRadiusKm || 3.5) * 1000);
               return (
@@ -312,7 +334,6 @@ export const ProfessionalDetailPage: React.FC = () => {
             })()}
           </div>
 
-          {/* Portfolio (Before / After) */}
           {technician.portfolio.length > 0 && (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 space-y-4">
               <h3 className="font-bold text-base text-zinc-900 dark:text-zinc-100">
@@ -325,10 +346,7 @@ export const ProfessionalDetailPage: React.FC = () => {
                     <h4 className="font-bold text-xs sm:text-sm text-zinc-800 dark:text-zinc-200">
                       {isBangla ? item.titleBn : item.titleEn}
                     </h4>
-                    <BeforeAfterSlider
-                      beforeImage={item.beforeImage}
-                      afterImage={item.afterImage}
-                    />
+                    <BeforeAfterSlider beforeImage={item.beforeImage} afterImage={item.afterImage} />
                     <p className="text-xs text-zinc-500 leading-relaxed">
                       {isBangla ? item.descriptionBn : item.descriptionEn}
                     </p>
@@ -339,12 +357,9 @@ export const ProfessionalDetailPage: React.FC = () => {
           )}
         </div>
 
-        {/* Right Column: Health Score Card & Customer Reviews */}
         <div className="lg:col-span-5 space-y-6">
-          {/* Health Score Component */}
           <HealthScoreCard score={technician.healthScore} />
 
-          {/* Verified Customer Reviews */}
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
@@ -366,11 +381,17 @@ export const ProfessionalDetailPage: React.FC = () => {
                   <div key={rev.id} className="pt-3 first:pt-0 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <img
-                          src={rev.customerAvatar}
-                          alt={rev.customerName}
-                          className="w-6 h-6 rounded-full object-cover"
-                        />
+                        {rev.customerAvatar ? (
+                          <img
+                            src={rev.customerAvatar}
+                            alt={rev.customerName}
+                            className="w-6 h-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-[10px] font-bold flex items-center justify-center">
+                            {(rev.customerName || 'C').slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
                         <span className="font-bold text-xs text-zinc-800 dark:text-zinc-200">
                           {rev.customerName}
                         </span>

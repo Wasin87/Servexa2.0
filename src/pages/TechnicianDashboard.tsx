@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   Calendar,
@@ -41,12 +41,12 @@ import {
 import { useApp } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useToast } from '../contexts/ToastContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { DashboardShell, DashboardNavGroup, DashboardNavItem, DashboardKpiItem } from '../components/common/DashboardShell';
 import { InvoiceModal } from '../components/common/InvoiceModal';
 import { ChatModal } from '../components/common/ChatModal';
 import { ImageUploader } from '../components/common/ImageUploader';
-import { ConfettiCelebration } from '../components/common/ConfettiCelebration';
 import { TechnicianRouteMap } from '../components/map/TechnicianRouteMap';
 import { BANGLADESH_DIVISIONS, BANGLADESH_DISTRICTS, getDistrictsByDivision, findDistrict } from '../data/bangladeshLocations';
 import { calculateTechnicianCompletion } from '../utils/profileCompletion';
@@ -67,22 +67,31 @@ export const TechnicianDashboard: React.FC = () => {
     updateWarrantyStatus,
     generateInvoice,
     updateTechnicianAvailability,
+    registerNewTechnician,
     updateTechnicianProfile,
     addTechnicianPortfolio,
     deleteTechnicianPortfolio,
     getUnreadChatCount
   } = useApp();
-  const { currentUser, authTokenReady, switchDemoTechnician, updateProfile } = useAuth();
+  const { currentUser, authTokenReady, updateProfile } = useAuth();
   const { t, isBangla } = useLanguage();
+  const { showToast: showGlobalToast, triggerConfettiBurst } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  // Active technician selection (defaults to logged-in user's linked tech or tech-1)
-  const matchedUserTech = technicians.find(tech => tech.userId === currentUser?.id);
-  const defaultTechId = matchedUserTech?.id || 'tech-1';
-  const [selectedTechId, setSelectedTechId] = useState<string>(defaultTechId);
-  const currentTech: Technician = technicians.find(tech => tech.id === selectedTechId) || matchedUserTech || technicians[0];
+  // Strict per-user technician matching (Admin may inspect any registered technician)
+  const matchedUserTech = technicians.find(
+    tech =>
+      tech.userId === currentUser?.id ||
+      (!!currentUser?.email && tech.email?.toLowerCase() === currentUser.email.toLowerCase())
+  );
+  const [selectedTechId, setSelectedTechId] = useState<string>(matchedUserTech?.id || '');
+  const currentTech: Technician | undefined =
+    currentUser?.role === 'ADMIN'
+      ? technicians.find(tech => tech.id === selectedTechId) || matchedUserTech || technicians[0]
+      : matchedUserTech;
+  const autoProvisionedRef = useRef<Set<string>>(new Set());
   const [serverPeriodStats, setServerPeriodStats] = useState<{
     todayEarnings: number;
     todayCompletedCount: number;
@@ -111,10 +120,19 @@ export const TechnicianDashboard: React.FC = () => {
   const [expandedRouteMapIds, setExpandedRouteMapIds] = useState<Record<string, boolean>>({});
   const [fullscreenRouteBooking, setFullscreenRouteBooking] = useState<Booking | null>(null);
   const [warrantyNotesInput, setWarrantyNotesInput] = useState<Record<string, string>>({});
-  const [showConfetti, setShowConfetti] = useState(false);
 
-  const completion = calculateTechnicianCompletion(currentTech);
-  const isSkillApproved = !!currentTech.skillVerified && completion.isMinReady;
+  const completion = currentTech
+    ? calculateTechnicianCompletion(currentTech)
+    : {
+        percent: 0,
+        completedCount: 0,
+        totalCount: 9,
+        isComplete: false,
+        isMinReady: false,
+        missingLabelsBn: [] as string[],
+        missingLabelsEn: [] as string[],
+      };
+  const isSkillApproved = !!currentTech?.skillVerified && completion.isMinReady;
 
   const isRouteMapOpen = (job: Booking) => {
     if (expandedRouteMapIds[job.id] !== undefined) {
@@ -131,12 +149,8 @@ export const TechnicianDashboard: React.FC = () => {
     }));
   };
 
-  // Success Toast state
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const showToast = (msg: string, variant: 'success' | 'error' | 'info' = 'success') => {
+    showGlobalToast(msg, variant);
   };
 
   // Invoice creation form inputs
@@ -154,47 +168,58 @@ export const TechnicianDashboard: React.FC = () => {
   const [extraChargeSubmitting, setExtraChargeSubmitting] = useState<boolean>(false);
 
   // Profile Form State
-  const [nameInput, setNameInput] = useState(currentTech.name);
-  const [phoneInput, setPhoneInput] = useState(currentTech.phone);
-  const [avatarInput, setAvatarInput] = useState(currentTech.avatar);
-  const [divisionInput, setDivisionInput] = useState(currentTech.division || '');
-  const [districtInput, setDistrictInput] = useState(currentTech.district || currentTech.city || '');
-  const [areaInput, setAreaInput] = useState(currentTech.primaryArea || '');
-  const [experienceInput, setExperienceInput] = useState(currentTech.experienceYears);
-  const [workingHoursInput, setWorkingHoursInput] = useState(currentTech.workingHours);
-  const [bioBnInput, setBioBnInput] = useState(currentTech.bioBn);
-  const [bioEnInput, setBioEnInput] = useState(currentTech.bioEn);
-  const [aboutBnInput, setAboutBnInput] = useState(currentTech.aboutBn || '');
-  const [nidFrontInput, setNidFrontInput] = useState(currentTech.nidFrontImage || '');
-  const [nidBackInput, setNidBackInput] = useState(currentTech.nidBackImage || '');
+  const [nameInput, setNameInput] = useState(currentTech?.name || currentUser?.name || '');
+  const [phoneInput, setPhoneInput] = useState(currentTech?.phone || currentUser?.phone || '');
+  const [avatarInput, setAvatarInput] = useState(currentTech?.avatar || currentUser?.avatar || '');
+  const [divisionInput, setDivisionInput] = useState(currentTech?.division || '');
+  const [districtInput, setDistrictInput] = useState(currentTech?.district || currentTech?.city || '');
+  const [areaInput, setAreaInput] = useState(currentTech?.primaryArea || '');
+  const [experienceInput, setExperienceInput] = useState(currentTech?.experienceYears || 0);
+  const [workingHoursInput, setWorkingHoursInput] = useState(currentTech?.workingHours || '');
+  const [bioBnInput, setBioBnInput] = useState(currentTech?.bioBn || '');
+  const [bioEnInput, setBioEnInput] = useState(currentTech?.bioEn || '');
+  const [aboutBnInput, setAboutBnInput] = useState(currentTech?.aboutBn || '');
+  const [nidFrontInput, setNidFrontInput] = useState(currentTech?.nidFrontImage || '');
+  const [nidBackInput, setNidBackInput] = useState(currentTech?.nidBackImage || '');
 
   // Skills & Rates Form State
-  const [visitingFeeInput, setVisitingFeeInput] = useState(currentTech.visitingFee || 200);
-  const [startingPriceInput, setStartingPriceInput] = useState(currentTech.startingPrice || 350);
-  const [radiusInput, setRadiusInput] = useState(currentTech.serviceRadiusKm || 15);
-  const [emergencyAvailableInput, setEmergencyAvailableInput] = useState(currentTech.emergencyAvailable ?? true);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>(currentTech.skills || []);
+  const [visitingFeeInput, setVisitingFeeInput] = useState(currentTech?.visitingFee || 200);
+  const [startingPriceInput, setStartingPriceInput] = useState(currentTech?.startingPrice || 350);
+  const [radiusInput, setRadiusInput] = useState(currentTech?.serviceRadiusKm || 15);
+  const [emergencyAvailableInput, setEmergencyAvailableInput] = useState(currentTech?.emergencyAvailable ?? true);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(currentTech?.skills || []);
 
   // Add Portfolio Modal State
   const [showAddPortfolioModal, setShowAddPortfolioModal] = useState(false);
   const [portTitleBn, setPortTitleBn] = useState('');
   const [portTitleEn, setPortTitleEn] = useState('');
   const [portCategory, setPortCategory] = useState('ac_repair');
-  const [portBeforeImg, setPortBeforeImg] = useState('/src/assets/images/service_ac_electrical_1794936425375.jpg');
-  const [portAfterImg, setPortAfterImg] = useState('/src/assets/images/service_plumbing_home_1794936425180.jpg');
+  const [portBeforeImg, setPortBeforeImg] = useState('');
+  const [portAfterImg, setPortAfterImg] = useState('');
   const [portDescBn, setPortDescBn] = useState('');
 
-  // Auto-select logged-in technician record when user changes
+  // Auto-select logged-in technician record or auto-provision if missing after initial sync
   useEffect(() => {
-    const owned = technicians.find(tech => tech.userId === currentUser?.id);
-    if (owned) {
-      setSelectedTechId(owned.id);
+    if (matchedUserTech) {
+      setSelectedTechId(matchedUserTech.id);
+      return;
     }
-  }, [currentUser?.id, technicians.length]);
+    if (!currentUser || currentUser.role !== 'TECHNICIAN') return;
+    if (autoProvisionedRef.current.has(currentUser.id)) return;
+
+    const timer = setTimeout(() => {
+      if (autoProvisionedRef.current.has(currentUser.id)) return;
+      autoProvisionedRef.current.add(currentUser.id);
+      const created = registerNewTechnician(currentUser);
+      setSelectedTechId(created.id);
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [currentUser?.id, currentUser?.role, matchedUserTech?.id, registerNewTechnician]);
 
   // Fetch strictly per-technician periodStats from backend wallet API once JWT session is ready
   useEffect(() => {
-    if (!authTokenReady || !currentUser || !['TECHNICIAN', 'ADMIN'].includes(currentUser.role)) {
+    if (!authTokenReady || !currentUser || !currentTech || !['TECHNICIAN', 'ADMIN'].includes(currentUser.role)) {
       setServerPeriodStats(null);
       return;
     }
@@ -214,7 +239,7 @@ export const TechnicianDashboard: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [authTokenReady, currentUser?.id, currentUser?.role, currentTech.id, bookings.length]);
+  }, [authTokenReady, currentUser?.id, currentUser?.role, currentTech?.id, bookings.length]);
 
   // Sync URL query tab / pathname & enforce verification gate on restricted tabs
   useEffect(() => {
@@ -244,16 +269,16 @@ export const TechnicianDashboard: React.FC = () => {
   // Sync inputs when currentTech updates
   useEffect(() => {
     if (currentTech) {
-      setNameInput(currentTech.name);
-      setPhoneInput(currentTech.phone);
-      setAvatarInput(currentTech.avatar);
+      setNameInput(currentTech.name || '');
+      setPhoneInput(currentTech.phone || '');
+      setAvatarInput(currentTech.avatar || '');
       setDivisionInput(currentTech.division || '');
       setDistrictInput(currentTech.district || currentTech.city || '');
       setAreaInput(currentTech.primaryArea || '');
-      setExperienceInput(currentTech.experienceYears);
-      setWorkingHoursInput(currentTech.workingHours);
-      setBioBnInput(currentTech.bioBn);
-      setBioEnInput(currentTech.bioEn);
+      setExperienceInput(currentTech.experienceYears || 0);
+      setWorkingHoursInput(currentTech.workingHours || '');
+      setBioBnInput(currentTech.bioBn || '');
+      setBioEnInput(currentTech.bioEn || '');
       setAboutBnInput(currentTech.aboutBn || '');
       setNidFrontInput(currentTech.nidFrontImage || '');
       setNidBackInput(currentTech.nidBackImage || '');
@@ -263,28 +288,30 @@ export const TechnicianDashboard: React.FC = () => {
       setEmergencyAvailableInput(currentTech.emergencyAvailable ?? true);
       setSelectedSkills(currentTech.skills || []);
     }
-  }, [currentTech.id]);
+  }, [currentTech?.id]);
 
   const districtsInDivision = getDistrictsByDivision(divisionInput || undefined);
   const activeDistrictObj = findDistrict(districtInput) || districtsInDivision[0] || BANGLADESH_DISTRICTS[0];
   const areasInDistrict = districtInput ? activeDistrictObj.areas : [];
 
   // Filter bookings strictly for this technician
-  const techBookings = bookings.filter(b => b.technicianId === currentTech.id);
+  const techBookings = currentTech ? bookings.filter(b => b.technicianId === currentTech.id) : [];
   const pendingRequests = techBookings.filter(b => b.status === 'REQUESTED');
   const activeJobs = techBookings.filter(b => ['ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'IN_PROGRESS'].includes(b.status));
   const completedJobs = techBookings.filter(b => b.status === 'COMPLETED');
 
   // Admin-approved Warranty Claims strictly assigned to this technician
-  const techWarranties = warranties.filter(
-    w => w.technicianId === currentTech.id && ['APPROVED', 'ACCEPTED', 'ON_THE_WAY', 'RESOLVED'].includes(w.status)
-  );
+  const techWarranties = currentTech
+    ? warranties.filter(
+        w => w.technicianId === currentTech.id && ['APPROVED', 'ACCEPTED', 'ON_THE_WAY', 'RESOLVED'].includes(w.status)
+      )
+    : [];
   const pendingTechWarranties = techWarranties.filter(w => w.status === 'APPROVED');
   const activeTechWarranties = techWarranties.filter(w => ['ACCEPTED', 'ON_THE_WAY'].includes(w.status));
   const unreadWarrantyCount = pendingTechWarranties.length + activeTechWarranties.length;
 
   // Customer feedback / reviews for this technician
-  const techReviews = reviews.filter(r => r.technicianId === currentTech.id);
+  const techReviews = currentTech ? reviews.filter(r => r.technicianId === currentTech.id) : [];
 
   // Total unread chat messages for active jobs
   const activeJobsUnreadCount = activeJobs.reduce((acc, job) => acc + getUnreadChatCount(job.id, 'TECHNICIAN'), 0);
@@ -323,16 +350,16 @@ export const TechnicianDashboard: React.FC = () => {
       bookingNumber: claim.bookingNumber,
       customerId: claim.customerId,
       customerName: claim.customerName || 'গ্রাহক',
-      customerPhone: claim.customerPhone || '01700-000000',
-      customerCity: 'Dhaka',
-      customerArea: claim.customerArea || 'Dhanmondi',
-      customerAddress: claim.customerAddress || 'Dhanmondi, Dhaka',
+      customerPhone: claim.customerPhone || '',
+      customerCity: claim.customerArea || '',
+      customerArea: claim.customerArea || '',
+      customerAddress: claim.customerAddress || '',
       customerLat: claim.customerLat,
       customerLng: claim.customerLng,
-      technicianId: currentTech.id,
-      technicianName: currentTech.name,
-      technicianPhone: currentTech.phone,
-      technicianAvatar: currentTech.avatar,
+      technicianId: currentTech?.id || '',
+      technicianName: currentTech?.name || '',
+      technicianPhone: currentTech?.phone || '',
+      technicianAvatar: currentTech?.avatar || '',
       categoryId: 'repair',
       serviceNameEn: claim.serviceName,
       serviceNameBn: claim.serviceName,
@@ -421,6 +448,7 @@ export const TechnicianDashboard: React.FC = () => {
         updateBookingStatus(bookingId, 'ACCEPTED', 'Technician accepted the job', 'মিস্ত্রি কাজ গ্রহণ করেছেন');
         setExpandedRouteMapIds((prev) => ({ ...prev, [bookingId]: true }));
         setActiveTab('active');
+        triggerConfettiBurst();
         showToast(
           isBangla
             ? 'কাজটি গ্রহণ করা হয়েছে! গ্রাহকের লোকেশন ম্যাপে দেখুন।'
@@ -456,7 +484,7 @@ export const TechnicianDashboard: React.FC = () => {
 
   const handleInvoiceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!invoiceModalBooking) return;
+    if (!invoiceModalBooking || !currentTech) return;
 
     generateInvoice(invoiceModalBooking.id, {
       visitingFee: invoiceModalBooking.estimatedVisitingFee || currentTech.visitingFee || 200,
@@ -479,6 +507,7 @@ export const TechnicianDashboard: React.FC = () => {
     }
 
     setInvoiceModalBooking(null);
+    triggerConfettiBurst();
     showToast(isBangla ? 'অফিসিয়াল ইনভয়েস তৈরি এবং কাজ সমাপ্ত হয়েছে!' : 'Official invoice generated & job completed!');
     setActiveTab('completed');
   };
@@ -538,6 +567,7 @@ export const TechnicianDashboard: React.FC = () => {
   // 1. SAVE PROFILE HANDLER
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentTech) return;
     const distObj = findDistrict(districtInput);
     const updatedProfile = {
       name: nameInput.trim(),
@@ -549,10 +579,10 @@ export const TechnicianDashboard: React.FC = () => {
       primaryArea: areaInput,
       latitude: distObj ? distObj.lat : currentTech.latitude,
       longitude: distObj ? distObj.lng : currentTech.longitude,
-      experienceYears: Number(experienceInput),
+      experienceYears: Number(experienceInput) || 0,
       workingHours: workingHoursInput.trim(),
       bioBn: bioBnInput.trim(),
-      bioEn: bioEnInput.trim() || bioBnInput.trim(),
+      bioEn: bioEnInput.trim(),
       aboutBn: aboutBnInput.trim(),
       nidFrontImage: nidFrontInput.trim(),
       nidBackImage: nidBackInput.trim()
@@ -574,7 +604,7 @@ export const TechnicianDashboard: React.FC = () => {
 
     const nextComp = calculateTechnicianCompletion({ ...currentTech, ...updatedProfile });
     if (nextComp.isComplete) {
-      setShowConfetti(true);
+      triggerConfettiBurst();
       showToast(
         isBangla
           ? 'অভিনন্দন! আপনার বায়োডাটা ১০০% সম্পূর্ণ হয়েছে — অ্যাডমিন যাচাই করে "দক্ষতা উত্তীর্ণ" অনুমোদন দেবেন।'
@@ -584,7 +614,8 @@ export const TechnicianDashboard: React.FC = () => {
       showToast(
         isBangla
           ? `প্রোফাইল সংরক্ষিত হয়েছে (${nextComp.percent}% সম্পূর্ণ)`
-          : `Profile saved (${nextComp.percent}% complete)`
+          : `Profile saved (${nextComp.percent}% complete)`,
+        'info'
       );
     }
   };
@@ -592,8 +623,9 @@ export const TechnicianDashboard: React.FC = () => {
   // 2. SAVE SKILLS & RATES HANDLER
   const handleSaveSkillsAndRates = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentTech) return;
     if (selectedSkills.length === 0) {
-      showToast(isBangla ? 'কমপক্ষে একটি কাজের দক্ষতা নির্বাচন করুন!' : 'Please select at least one service skill!');
+      showToast(isBangla ? 'কমপক্ষে একটি কাজের দক্ষতা নির্বাচন করুন!' : 'Please select at least one service skill!', 'error');
       return;
     }
     const updatedSkillsPayload = {
@@ -606,7 +638,7 @@ export const TechnicianDashboard: React.FC = () => {
     updateTechnicianProfile(currentTech.id, updatedSkillsPayload);
     const nextComp = calculateTechnicianCompletion({ ...currentTech, ...updatedSkillsPayload });
     if (nextComp.isComplete) {
-      setShowConfetti(true);
+      triggerConfettiBurst();
       showToast(
         isBangla
           ? 'অভিনন্দন! আপনার প্রোফাইল ও দক্ষতা ১০০% সম্পূর্ণ হয়েছে!'
@@ -630,7 +662,7 @@ export const TechnicianDashboard: React.FC = () => {
   // 3. ADD PORTFOLIO HANDLER
   const handleAddPortfolioSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!portTitleBn.trim()) return;
+    if (!portTitleBn.trim() || !currentTech) return;
 
     addTechnicianPortfolio(currentTech.id, {
       titleBn: portTitleBn.trim(),
@@ -647,12 +679,14 @@ export const TechnicianDashboard: React.FC = () => {
     setPortTitleBn('');
     setPortTitleEn('');
     setPortDescBn('');
+    triggerConfettiBurst();
     showToast(isBangla ? 'নতুন কাজের ছবি পোর্টফোলিওতে সফলভাবে যোগ করা হয়েছে!' : 'Work portfolio photo added successfully!');
   };
 
   const handleDeletePortfolioItem = (itemId: string) => {
+    if (!currentTech) return;
     deleteTechnicianPortfolio(currentTech.id, itemId);
-    showToast(isBangla ? 'পোর্টফোলিও আইটেম অপসারিত হয়েছে!' : 'Portfolio item removed!');
+    showToast(isBangla ? 'পোর্টফোলিও আইটেম অপসারিত হয়েছে!' : 'Portfolio item removed!', 'info');
   };
 
   const techNavGroups: DashboardNavGroup[] = [
@@ -732,7 +766,7 @@ export const TechnicianDashboard: React.FC = () => {
           id: 'portfolio',
           label: isBangla ? 'কাজের পোর্টফোলিও' : 'Work Portfolio',
           icon: <Camera className="w-4 h-4" />,
-          count: currentTech.portfolio?.length || 0
+          count: currentTech?.portfolio?.length || 0
         }
       ]
     }
@@ -838,10 +872,10 @@ export const TechnicianDashboard: React.FC = () => {
     setActiveTab(id as typeof activeTab);
   };
 
-  const techSidebarSwitcher = (
+  const techSidebarSwitcher = currentUser?.role === 'ADMIN' && technicians.length > 0 && currentTech ? (
     <div className="space-y-1.5">
       <label className="block text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-        {isBangla ? 'সক্রিয় টেকনিশিয়ান অ্যাকাউন্ট' : 'Active Technician Profile'}
+        {isBangla ? 'সক্রিয় টেকনিশিয়ান অ্যাকাউন্ট (অ্যাডমিন ভিউ)' : 'Active Technician Profile (Admin View)'}
       </label>
       <select
         value={currentTech.id}
@@ -849,10 +883,6 @@ export const TechnicianDashboard: React.FC = () => {
           const nextId = e.target.value;
           setSelectedTechId(nextId);
           setServerPeriodStats(null);
-          const targetTech = technicians.find(tech => tech.id === nextId);
-          if (targetTech && currentUser?.role !== 'ADMIN') {
-            switchDemoTechnician(targetTech);
-          }
         }}
         className="w-full px-2.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-xs font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer"
       >
@@ -870,7 +900,7 @@ export const TechnicianDashboard: React.FC = () => {
         })}
       </select>
     </div>
-  );
+  ) : undefined;
 
   const techBanners = (
     <div className="space-y-3 sm:space-y-4">
@@ -916,7 +946,7 @@ export const TechnicianDashboard: React.FC = () => {
                   ? isBangla
                     ? `কাজ পিক করা ও ওয়েবসাইটের সকল ফিচার ব্যবহারের আগে কমপক্ষে ৯০%–১০০% বায়োডাটা এবং NID কার্ডের উভয় পাশের ছবি আপলোড করুন (${completion.completedCount}/${completion.totalCount} ধাপ সম্পন্ন)।`
                     : `Complete at least 90%–100% of your biodata and upload both sides of your NID card before accepting jobs (${completion.completedCount}/${completion.totalCount} steps done).`
-                  : !currentTech.skillVerified
+                  : !currentTech?.skillVerified
                   ? isBangla
                     ? 'দারুণ! আপনার বায়োডাটা ও NID জমা হয়েছে। এখন অ্যাডমিন আপনার তথ্য যাচাই করে "দক্ষতা উত্তীর্ণ" অনুমোদন দিলেই সব মেনু ব্যবহার করতে পারবেন।'
                     : 'Your biodata & NID have been submitted. Once Admin approves your Skill Test, all dispatch tabs unlock.'
@@ -990,23 +1020,54 @@ export const TechnicianDashboard: React.FC = () => {
     </div>
   );
 
+  if (!currentTech) {
+    return (
+      <DashboardShell
+        portalLabel={isBangla ? 'টেকনিশিয়ান পোর্টাল' : 'Technician Portal'}
+        userName={currentUser?.name || (isBangla ? 'টেকনিশিয়ান' : 'Technician')}
+        userMeta={isBangla ? 'লাইভ ফায়ারবেস পোর্টাল' : 'Live Firebase Portal'}
+        userAvatar={currentUser?.avatar || ''}
+        verifiedLabel={isBangla ? 'প্রস্তুত হচ্ছে' : 'Initializing'}
+        isVerified={false}
+        navGroups={techNavGroups}
+        activeTab={activeTab}
+        onSelectTab={handleNavSelect}
+        activeSectionTitle={techSectionMeta[activeTab].title}
+        activeSectionSubtitle={techSectionMeta[activeTab].subtitle}
+        kpis={techKpis}
+      >
+        <div className="p-8 sm:p-12 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 space-y-3">
+          <Wrench className="w-10 h-10 text-orange-500 mx-auto" />
+          <h3 className="text-base font-black text-zinc-900 dark:text-white">
+            {currentUser?.role === 'ADMIN'
+              ? isBangla
+                ? 'এখনো কোনো টেকনিশিয়ান নিবন্ধিত হয়নি'
+                : 'No Technicians Registered Yet'
+              : isBangla
+              ? 'আপনার টেকনিশিয়ান প্রোফাইল তৈরি হচ্ছে...'
+              : 'Setting up your Technician Profile...'}
+          </h3>
+          <p className="text-xs text-zinc-500 max-w-md mx-auto">
+            {currentUser?.role === 'ADMIN'
+              ? isBangla
+                ? 'যখন কোনো নতুন টেকনিশিয়ান রেজিস্ট্রেশন করবেন, তখন এখানে তার ড্যাশবোর্ড ও তথ্য দেখা যাবে।'
+                : 'Once technicians register on the platform, you can inspect their dashboards here.'
+              : isBangla
+              ? 'ফায়ারবেস ডাটাবেসের সাথে আপনার প্রোফাইল সিঙ্ক হচ্ছে। অনুগ্রহ করে কয়েক সেকেন্ড অপেক্ষা করুন।'
+              : 'Syncing your technician account with Firestore. Please wait a moment.'}
+          </p>
+        </div>
+      </DashboardShell>
+    );
+  }
+
   return (
     <>
-      <ConfettiCelebration active={showConfetti} onComplete={() => setShowConfetti(false)} />
-
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-20 lg:bottom-6 right-3 sm:right-6 left-3 sm:left-auto z-[3000] px-4 py-3 rounded-2xl bg-zinc-900 text-white text-xs font-bold shadow-2xl border border-orange-500/50 flex items-center gap-2 animate-in slide-in-from-bottom-3">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       <DashboardShell
         portalLabel={isBangla ? 'টেকনিশিয়ান পোর্টাল' : 'Technician Portal'}
         userName={currentTech.name}
         userMeta={`${currentTech.primaryArea ? `${currentTech.primaryArea}, ` : ''}${currentTech.district || currentTech.city || (isBangla ? 'বাংলাদেশ' : 'Bangladesh')} · ★ ${currentTech.rating}`}
-        userAvatar={currentTech.avatar}
+        userAvatar={currentTech.avatar || ''}
         verifiedLabel={isSkillApproved ? (isBangla ? 'দক্ষতা উত্তীর্ণ' : 'Skill Verified') : (isBangla ? 'অনুমোদন বাকি' : 'Pending Approval')}
         isVerified={isSkillApproved}
         sidebarTopSlot={techSidebarSwitcher}
@@ -1858,7 +1919,13 @@ export const TechnicianDashboard: React.FC = () => {
                 <div key={rev.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      <img src={rev.customerAvatar} alt={rev.customerName} className="w-10 h-10 rounded-full object-cover border border-orange-500/30" />
+                      {rev.customerAvatar ? (
+                        <img src={rev.customerAvatar} alt={rev.customerName} className="w-10 h-10 rounded-full object-cover border border-orange-500/30 shrink-0" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
+                          {(rev.customerName || 'C').charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div>
                         <div className="font-black text-xs text-zinc-900 dark:text-white">{rev.customerName}</div>
                         <div className="text-[11px] text-zinc-400">{rev.serviceName} · {rev.createdAt}</div>
@@ -1939,6 +2006,8 @@ export const TechnicianDashboard: React.FC = () => {
             <ImageUploader
               currentImage={avatarInput}
               onImageChange={setAvatarInput}
+              onRemove={() => setAvatarInput('')}
+              showPresets={false}
               label={isBangla ? 'নিজস্ব প্রোফাইল ছবি (ডিভাইস থেকে সরাসরি আপলোড করুন):' : 'Profile Photo (Direct Device Upload):'}
               shape="square"
             />
@@ -1950,9 +2019,9 @@ export const TechnicianDashboard: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  required
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
+                  placeholder={isBangla ? 'আপনার পূর্ণ নাম লিখুন' : 'Enter your full name'}
                   className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold"
                 />
               </div>
@@ -1963,9 +2032,9 @@ export const TechnicianDashboard: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  required
                   value={phoneInput}
                   onChange={(e) => setPhoneInput(e.target.value)}
+                  placeholder={isBangla ? '০১XXXXXXXXX' : '01XXXXXXXXX'}
                   className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold"
                 />
               </div>
@@ -1978,7 +2047,6 @@ export const TechnicianDashboard: React.FC = () => {
                   {isBangla ? 'বিভাগ (Division):' : 'Division:'}
                 </label>
                 <select
-                  required
                   value={divisionInput}
                   onChange={(e) => handleTechDivisionChange(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold"
@@ -1997,7 +2065,6 @@ export const TechnicianDashboard: React.FC = () => {
                   {isBangla ? 'জেলা (৬৪ জেলা):' : 'District (64):'}
                 </label>
                 <select
-                  required
                   value={districtInput}
                   onChange={(e) => handleTechDistrictChange(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold"
@@ -2016,7 +2083,6 @@ export const TechnicianDashboard: React.FC = () => {
                   {isBangla ? 'প্রধান এলাকা / উপজেলা:' : 'Primary Area / Upazila:'}
                 </label>
                 <select
-                  required
                   value={areaInput}
                   onChange={(e) => setAreaInput(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold"
@@ -2038,9 +2104,8 @@ export const TechnicianDashboard: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   max="40"
-                  required
                   value={experienceInput || ''}
                   onChange={(e) => setExperienceInput(Number(e.target.value))}
                   placeholder={isBangla ? 'যেমন: ৩' : 'e.g. 3'}
@@ -2054,7 +2119,6 @@ export const TechnicianDashboard: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  required
                   value={workingHoursInput}
                   onChange={(e) => setWorkingHoursInput(e.target.value)}
                   placeholder={isBangla ? 'সকাল ৮:০০ - রাত ৯:০০' : '8:00 AM - 9:00 PM'}
@@ -2069,7 +2133,6 @@ export const TechnicianDashboard: React.FC = () => {
               </label>
               <input
                 type="text"
-                required
                 value={bioBnInput}
                 onChange={(e) => setBioBnInput(e.target.value)}
                 placeholder={
@@ -2087,7 +2150,6 @@ export const TechnicianDashboard: React.FC = () => {
               </label>
               <textarea
                 rows={3}
-                required
                 value={aboutBnInput}
                 onChange={(e) => setAboutBnInput(e.target.value)}
                 placeholder={
@@ -2344,14 +2406,26 @@ export const TechnicianDashboard: React.FC = () => {
               {currentTech.portfolio.map((item) => (
                 <div key={item.id} className="p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3 relative group">
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="relative overflow-hidden rounded-xl">
-                      <img src={item.beforeImage} alt="Before Work" className="w-full h-32 object-cover border border-zinc-200 dark:border-zinc-700" />
+                    <div className="relative overflow-hidden rounded-xl bg-stone-100 dark:bg-zinc-800">
+                      {item.beforeImage ? (
+                        <img src={item.beforeImage} alt="Before Work" className="w-full h-32 object-cover border border-zinc-200 dark:border-zinc-700" />
+                      ) : (
+                        <div className="w-full h-32 flex items-center justify-center text-[11px] text-zinc-400">
+                          {isBangla ? 'ছবি নেই' : 'No photo'}
+                        </div>
+                      )}
                       <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-black/75 text-white text-[9px] font-black rounded-md">
                         {isBangla ? 'আগে (Before)' : 'Before'}
                       </span>
                     </div>
-                    <div className="relative overflow-hidden rounded-xl">
-                      <img src={item.afterImage} alt="After Work" className="w-full h-32 object-cover border-2 border-emerald-500" />
+                    <div className="relative overflow-hidden rounded-xl bg-stone-100 dark:bg-zinc-800">
+                      {item.afterImage ? (
+                        <img src={item.afterImage} alt="After Work" className="w-full h-32 object-cover border-2 border-emerald-500" />
+                      ) : (
+                        <div className="w-full h-32 flex items-center justify-center text-[11px] text-zinc-400">
+                          {isBangla ? 'ছবি নেই' : 'No photo'}
+                        </div>
+                      )}
                       <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-black rounded-md">
                         {isBangla ? 'পরে (After)' : 'After'}
                       </span>
@@ -2456,6 +2530,7 @@ export const TechnicianDashboard: React.FC = () => {
                 <ImageUploader
                   currentImage={portBeforeImg}
                   onImageChange={setPortBeforeImg}
+                  onRemove={() => setPortBeforeImg('')}
                   label={isBangla ? 'কাজের পূর্বের ছবি (Before Photo):' : 'Before Work Photo:'}
                   shape="banner"
                   showPresets={false}
@@ -2463,6 +2538,7 @@ export const TechnicianDashboard: React.FC = () => {
                 <ImageUploader
                   currentImage={portAfterImg}
                   onImageChange={setPortAfterImg}
+                  onRemove={() => setPortAfterImg('')}
                   label={isBangla ? 'কাজের পরের ছবি (After Photo):' : 'After Work Photo:'}
                   shape="banner"
                   showPresets={false}

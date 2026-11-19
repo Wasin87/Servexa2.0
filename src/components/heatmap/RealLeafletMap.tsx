@@ -4,6 +4,7 @@ import { DHAKA_HEATMAP_ZONES, HeatmapZone, TechnicianLocation } from '../../data
 import { useTheme } from '../../contexts/ThemeContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useApp } from '../../contexts/AppContext';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   Layers,
   Navigation,
@@ -13,38 +14,47 @@ import {
   Phone,
   MapPin,
   ArrowRight,
-  Flame
+  Flame,
+  Lock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   isValidLatLng,
   safeFlyOrSetView,
   safeLatLngToContainerPoint,
-  attachMapResizeObserver
+  attachMapResizeObserver,
 } from '../../utils/geoUtils';
 import { createResilientTileLayer, MapTileStyle } from '../../utils/mapTiles';
 
 type MapTileLayerType = MapTileStyle;
 
 interface RealLeafletMapProps {
+  zones?: HeatmapZone[];
   selectedZone: HeatmapZone;
   onSelectZone: (zone: HeatmapZone) => void;
   activeMode: 'DEMAND_INTENSITY' | 'PRO_DENSITY' | 'EMERGENCY_HOTSPOTS';
+  userLocation?: { lat: number; lng: number } | null;
+  flyToUserSeq?: number;
   className?: string;
 }
 
 export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
+  zones,
   selectedZone,
   onSelectZone,
   activeMode,
-  className = ''
+  userLocation = null,
+  flyToUserSeq = 0,
+  className = '',
 }) => {
   const { theme } = useTheme();
   const { isBangla } = useLanguage();
   const { technicians } = useApp();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const isDark = theme === 'dark';
+  const activeZones = zones && zones.length > 0 ? zones : DHAKA_HEATMAP_ZONES;
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -57,7 +67,6 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
   const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [selectedTech, setSelectedTech] = useState<TechnicianLocation | null>(null);
 
-  // Hover & click card popup states
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   const [hoveredTechId, setHoveredTechId] = useState<string | null>(null);
   const [pinnedZoneId, setPinnedZoneId] = useState<string | null>(null);
@@ -107,17 +116,17 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
 
   const getZoneColors = (zone: HeatmapZone) => {
     if (activeMode === 'DEMAND_INTENSITY') {
-      if (zone.demandScore >= 90) return { hex: '#ea580c', borderHex: '#f97316', textHex: '#ffffff' };
-      if (zone.demandScore >= 80) return { hex: '#f97316', borderHex: '#fb923c', textHex: '#ffffff' };
+      if (zone.demandScore >= 70) return { hex: '#ea580c', borderHex: '#f97316', textHex: '#ffffff' };
+      if (zone.demandScore >= 35) return { hex: '#f97316', borderHex: '#fb923c', textHex: '#ffffff' };
       return { hex: '#f59e0b', borderHex: '#fbbf24', textHex: '#ffffff' };
     }
     if (activeMode === 'PRO_DENSITY') {
-      if (zone.activeTechnicians >= 25) return { hex: '#10b981', borderHex: '#34d399', textHex: '#ffffff' };
-      if (zone.activeTechnicians >= 18) return { hex: '#f97316', borderHex: '#fb923c', textHex: '#ffffff' };
+      if (zone.activeTechnicians >= 5) return { hex: '#10b981', borderHex: '#34d399', textHex: '#ffffff' };
+      if (zone.activeTechnicians >= 1) return { hex: '#f97316', borderHex: '#fb923c', textHex: '#ffffff' };
       return { hex: '#6366f1', borderHex: '#818cf8', textHex: '#ffffff' };
     }
-    if (zone.emergencyCallsToday >= 18) return { hex: '#e11d48', borderHex: '#f43f5e', textHex: '#ffffff' };
-    if (zone.emergencyCallsToday >= 12) return { hex: '#f97316', borderHex: '#fb923c', textHex: '#ffffff' };
+    if (zone.emergencyCallsToday >= 5) return { hex: '#e11d48', borderHex: '#f43f5e', textHex: '#ffffff' };
+    if (zone.emergencyCallsToday >= 1) return { hex: '#f97316', borderHex: '#fb923c', textHex: '#ffffff' };
     return { hex: '#f59e0b', borderHex: '#fcd34d', textHex: '#ffffff' };
   };
 
@@ -138,7 +147,7 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
       minZoom: 10,
       maxZoom: 18,
       zoomControl: false,
-      attributionControl: false
+      attributionControl: false,
     });
 
     const overlayGroup = L.layerGroup().addTo(map);
@@ -187,7 +196,16 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
     safeFlyOrSetView(map, selectedZone.lat, selectedZone.lng, 13, { duration: 0.65 });
   }, [selectedZone?.id]);
 
-  // Render Leaflet Zone Circles, Zone Markers & Technician Markers
+  // Fly smoothly to user's live GPS location when requested
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !flyToUserSeq || !userLocation || !isValidLatLng(userLocation.lat, userLocation.lng)) {
+      return;
+    }
+    safeFlyOrSetView(map, userLocation.lat, userLocation.lng, 15, { duration: 0.7 });
+  }, [flyToUserSeq, userLocation?.lat, userLocation?.lng]);
+
+  // Render Leaflet Zone Circles, Zone Markers, Live Technician Markers & User GPS Marker
   useEffect(() => {
     const map = mapInstanceRef.current;
     const overlayGroup = overlayLayerRef.current;
@@ -196,12 +214,14 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
     overlayGroup.clearLayers();
 
     // 1. Zones
-    DHAKA_HEATMAP_ZONES.forEach((zone) => {
+    activeZones.forEach((zone) => {
       if (!isValidLatLng(zone.lat, zone.lng)) return;
       const colors = getZoneColors(zone);
       const isSelected = selectedZone.id === zone.id;
       const isCardOpen = hoveredZoneId === zone.id || pinnedZoneId === zone.id;
-      const labelText = isBangla ? zone.nameBn.split('(')[0].trim() : zone.nameEn.split('(')[0].trim();
+      const labelText = isBangla
+        ? zone.nameBn.split('(')[0].trim()
+        : zone.nameEn.split('(')[0].trim();
       const scoreBadge =
         activeMode === 'DEMAND_INTENSITY'
           ? `${zone.demandScore}%`
@@ -209,17 +229,15 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
           ? `${zone.activeTechnicians} pros`
           : `${zone.emergencyCallsToday} calls`;
 
-      // Zone heatmap circle
       const circle = L.circle([zone.lat, zone.lng], {
         radius: isSelected || isCardOpen ? 1200 : 850,
         color: colors.borderHex,
         fillColor: colors.hex,
         fillOpacity: isSelected || isCardOpen ? 0.34 : 0.18,
-        weight: isSelected || isCardOpen ? 2 : 1
+        weight: isSelected || isCardOpen ? 2 : 1,
       });
       circle.addTo(overlayGroup);
 
-      // Zone badge marker
       const badgeHtml = `
         <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);cursor:pointer;user-select:none;">
           <div style="display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:9999px;font-size:11px;font-weight:900;background:${colors.hex};color:#ffffff;border:2px solid ${
@@ -240,9 +258,9 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
           className: 'servexa-leaflet-zone-icon',
           html: badgeHtml,
           iconSize: [0, 0],
-          iconAnchor: [0, 0]
+          iconAnchor: [0, 0],
         }),
-        zIndexOffset: isCardOpen ? 2000 : isSelected ? 1000 : 100
+        zIndexOffset: isCardOpen ? 2000 : isSelected ? 1000 : 100,
       });
 
       marker.on('mouseover', () => handleZoneMouseEnter(zone.id));
@@ -257,7 +275,7 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
       marker.addTo(overlayGroup);
     });
 
-    // 2. Nearby Technicians for selectedZone
+    // 2. Nearby Live Technicians for selectedZone
     if (selectedZone && selectedZone.nearbyTechs) {
       selectedZone.nearbyTechs.forEach((tech) => {
         if (!isValidLatLng(tech.lat, tech.lng)) return;
@@ -288,9 +306,9 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
             className: 'servexa-leaflet-tech-icon',
             html: techHtml,
             iconSize: [0, 0],
-            iconAnchor: [0, 0]
+            iconAnchor: [0, 0],
           }),
-          zIndexOffset: isTechCardOpen ? 3000 : 500
+          zIndexOffset: isTechCardOpen ? 3000 : 500,
         });
 
         techMarker.on('mouseover', () => handleTechMouseEnter(tech.id));
@@ -305,9 +323,35 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
         techMarker.addTo(overlayGroup);
       });
     }
-  }, [selectedZone, activeMode, isBangla, hoveredZoneId, pinnedZoneId, hoveredTechId, pinnedTechId]);
 
-  const activeZoneCard = DHAKA_HEATMAP_ZONES.find(
+    // 3. User Live GPS Marker when located
+    if (userLocation && isValidLatLng(userLocation.lat, userLocation.lng)) {
+      const userLabel = isBangla ? 'আপনার অবস্থান' : 'You are here';
+      const userMarkerHtml = `
+        <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);pointer-events:none;">
+          <div style="padding:3px 9px;border-radius:9999px;background:#2563eb;color:#ffffff;font-size:10px;font-weight:900;white-space:nowrap;border:2px solid #ffffff;box-shadow:0 6px 16px rgba(37,99,235,0.45);margin-bottom:4px;">
+            ${userLabel}
+          </div>
+          <div style="position:relative;width:18px;height:18px;display:flex;align-items:center;justify-content:center;">
+            <span style="position:absolute;inset:-6px;border-radius:9999px;background:rgba(37,99,235,0.3);animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></span>
+            <span style="width:14px;height:14px;border-radius:9999px;background:#2563eb;border:3px solid #ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.35);"></span>
+          </div>
+        </div>
+      `;
+
+      L.marker([userLocation.lat, userLocation.lng], {
+        icon: L.divIcon({
+          className: 'servexa-user-gps-icon',
+          html: userMarkerHtml,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        }),
+        zIndexOffset: 4000,
+      }).addTo(overlayGroup);
+    }
+  }, [activeZones, selectedZone, activeMode, isBangla, hoveredZoneId, pinnedZoneId, hoveredTechId, pinnedTechId, userLocation?.lat, userLocation?.lng]);
+
+  const activeZoneCard = activeZones.find(
     (z) => z.id === (pinnedZoneId || hoveredZoneId)
   );
   const activeTechCard = selectedZone?.nearbyTechs?.find(
@@ -358,22 +402,18 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
 
       {/* Interactive Zone Hover/Pinned Card */}
       {activeZoneCard && !activeTechCard && cardPoint && (() => {
-        const featuredName = activeZoneCard.featuredPros && activeZoneCard.featuredPros[0]?.name;
-        const matchedZoneTech = featuredName
-          ? technicians.find(
-              (t) =>
-                t.name.toLowerCase().includes(featuredName.toLowerCase()) ||
-                featuredName.toLowerCase().includes(t.name.toLowerCase())
-            )
+        const featuredPro = activeZoneCard.featuredPros && activeZoneCard.featuredPros[0];
+        const matchedZoneTech = featuredPro
+          ? technicians.find((t) => t.id === featuredPro.id || t.name === featuredPro.name)
           : null;
-        const zoneProfileId = matchedZoneTech ? matchedZoneTech.id : technicians[0]?.id || 'tech-1';
+        const zoneProfileId = matchedZoneTech?.id || null;
 
         return (
           <div
             style={{
               left: `${clampedX}px`,
               top: `${Math.max(220, cardPoint.y - 36)}px`,
-              transform: 'translate(-50%, -100%)'
+              transform: 'translate(-50%, -100%)',
             }}
             className="absolute z-30 pointer-events-auto w-[290px] sm:w-[320px] rounded-2xl bg-white/98 dark:bg-zinc-900/98 backdrop-blur-md border border-orange-500/40 shadow-2xl p-4 text-left font-sans animate-in fade-in zoom-in-95 duration-150"
             onMouseEnter={handleCardMouseEnter}
@@ -430,27 +470,25 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
               </div>
               <div>
                 <div className="font-bold text-emerald-600 dark:text-emerald-400">
-                  ~{activeZoneCard.avgArrivalMinutes}m
+                  {activeZoneCard.avgArrivalMinutes > 0 ? `~${activeZoneCard.avgArrivalMinutes}m` : '—'}
                 </div>
                 <div className="text-[8px] text-zinc-400">{isBangla ? 'আগমন সময়' : 'Avg ETA'}</div>
               </div>
             </div>
 
-            {activeZoneCard.featuredPros && activeZoneCard.featuredPros[0] && (
+            {featuredPro && (
               <div className="mt-2.5 p-2 rounded-xl bg-orange-500/10 dark:bg-orange-950/30 border border-orange-500/20 flex items-center justify-between text-xs">
                 <div className="min-w-0 pr-2">
                   <div className="font-bold text-zinc-900 dark:text-zinc-100 text-[11px] truncate flex items-center gap-1">
-                    <span>{activeZoneCard.featuredPros[0].name}</span>
+                    <span>{featuredPro.name}</span>
                     <ShieldCheck className="w-3 h-3 text-blue-500 shrink-0" />
                   </div>
                   <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
-                    {isBangla
-                      ? activeZoneCard.featuredPros[0].tradeBn
-                      : activeZoneCard.featuredPros[0].tradeEn}
+                    {isBangla ? featuredPro.tradeBn : featuredPro.tradeEn}
                   </div>
                 </div>
                 <div className="text-amber-500 font-extrabold text-[11px] shrink-0">
-                  ★ {activeZoneCard.featuredPros[0].rating}
+                  ★ {featuredPro.rating || '5.0'}
                 </div>
               </div>
             )}
@@ -459,11 +497,24 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(`/professionals/${zoneProfileId}`);
+                  if (!isAuthenticated) {
+                    navigate('/login');
+                    return;
+                  }
+                  if (zoneProfileId) {
+                    navigate(`/professionals/${zoneProfileId}`);
+                  } else {
+                    navigate(
+                      `/professionals?area=${encodeURIComponent(
+                        activeZoneCard.nameEn.split('(')[0].trim()
+                      )}`
+                    );
+                  }
                 }}
                 type="button"
                 className="w-full py-2 px-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:border-orange-500 dark:hover:border-orange-500 hover:bg-orange-50/50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95"
               >
+                {!isAuthenticated && <Lock className="w-3 h-3 text-orange-500" />}
                 <span>{isBangla ? 'প্রোফাইল দেখুন' : 'View Profile'}</span>
                 <ArrowRight className="w-3 h-3 text-orange-500" />
               </button>
@@ -471,7 +522,13 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(`/book?zone=${activeZoneCard.id}&service=${activeZoneCard.topCategory}`);
+                  navigate(
+                    isAuthenticated
+                      ? `/book?zone=${activeZoneCard.id}&service=${encodeURIComponent(
+                          activeZoneCard.topCategory
+                        )}`
+                      : '/login'
+                  );
                 }}
                 type="button"
                 className="w-full py-2 px-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-black text-xs flex items-center justify-center gap-1 shadow-md shadow-orange-600/25 transition-all cursor-pointer active:scale-95"
@@ -488,17 +545,16 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
         const matchedTech = technicians.find(
           (t) =>
             t.id === activeTechCard.id ||
-            t.name.toLowerCase().includes(activeTechCard.name.toLowerCase()) ||
-            activeTechCard.name.toLowerCase().includes(t.name.toLowerCase())
+            t.name.toLowerCase() === activeTechCard.name.toLowerCase()
         );
-        const techProfileId = matchedTech ? matchedTech.id : technicians[0]?.id || 'tech-1';
+        const techProfileId = matchedTech?.id || activeTechCard.id;
 
         return (
           <div
             style={{
               left: `${clampedX}px`,
               top: `${Math.max(195, cardPoint.y - 24)}px`,
-              transform: 'translate(-50%, -100%)'
+              transform: 'translate(-50%, -100%)',
             }}
             className="absolute z-30 pointer-events-auto w-[280px] sm:w-[300px] rounded-2xl bg-white/98 dark:bg-zinc-900/98 backdrop-blur-md border border-orange-500/40 shadow-2xl p-4 text-left font-sans animate-in fade-in zoom-in-95 duration-150"
             onMouseEnter={handleCardMouseEnter}
@@ -531,7 +587,7 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
             </div>
 
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold flex items-center justify-center shadow-md shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold flex items-center justify-center shadow-md">
                 {activeTechCard.name.charAt(0)}
               </div>
               <div className="min-w-0 flex-1">
@@ -541,7 +597,7 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
                 </h5>
                 <div className="flex items-center gap-2 text-[11px] text-zinc-500 mt-0.5">
                   <span className="text-amber-500 font-bold flex items-center gap-0.5">
-                    ★ {activeTechCard.rating}
+                    ★ {activeTechCard.rating || '5.0'}
                   </span>
                   <span>·</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
@@ -555,11 +611,12 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(`/professionals/${techProfileId}`);
+                  navigate(isAuthenticated ? `/professionals/${techProfileId}` : '/login');
                 }}
                 type="button"
                 className="w-full py-2 px-2 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:border-orange-500 dark:hover:border-orange-500 hover:bg-orange-50/50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95"
               >
+                {!isAuthenticated && <Lock className="w-3 h-3 text-orange-500" />}
                 <span>{isBangla ? 'প্রোফাইল দেখুন' : 'View Profile'}</span>
                 <ArrowRight className="w-3 h-3 text-orange-500" />
               </button>
@@ -567,7 +624,11 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(`/book?zone=${selectedZone.id}&tech=${encodeURIComponent(activeTechCard.name)}`);
+                  navigate(
+                    isAuthenticated
+                      ? `/book?techId=${encodeURIComponent(techProfileId)}&zone=${selectedZone.id}`
+                      : '/login'
+                  );
                 }}
                 type="button"
                 className="w-full py-2 px-2 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-black text-xs flex items-center justify-center gap-1 shadow-md shadow-orange-600/25 transition-all cursor-pointer active:scale-95"
@@ -591,7 +652,7 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
           </span>
           <span className="text-zinc-400">·</span>
           <span className="text-[11px] text-orange-600 dark:text-orange-400 font-semibold">
-            {isBangla ? `${DHAKA_HEATMAP_ZONES.length}টি হটস্পট জোন` : `${DHAKA_HEATMAP_ZONES.length} Hotspot Zones`}
+            {isBangla ? `${activeZones.length}টি হটস্পট জোন` : `${activeZones.length} Hotspot Zones`}
           </span>
         </div>
       </div>
@@ -713,7 +774,7 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
 
           <div className="flex items-center justify-between text-xs py-2 border-y border-zinc-100 dark:border-zinc-800 my-2">
             <span className="text-amber-500 font-bold flex items-center gap-1">
-              ★ {selectedTech.rating} / 5.0
+              ★ {selectedTech.rating || '5.0'} / 5.0
             </span>
             <span className="text-emerald-600 dark:text-emerald-400 font-bold">
               ⚡ ~{selectedTech.etaMins} {isBangla ? 'মিনিটে আগমন' : 'mins ETA'}
@@ -722,26 +783,54 @@ export const RealLeafletMap: React.FC<RealLeafletMapProps> = ({
 
           <div className="flex items-center gap-2 pt-1">
             <button
-              onClick={() => navigate(`/book?zone=${selectedZone.id}&tech=${encodeURIComponent(selectedTech.name)}`)}
+              onClick={() =>
+                navigate(
+                  isAuthenticated
+                    ? `/book?techId=${encodeURIComponent(selectedTech.id)}&zone=${selectedZone.id}`
+                    : '/login'
+                )
+              }
               type="button"
               className="flex-1 py-2 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs transition-colors shadow-md shadow-orange-600/20 text-center cursor-pointer"
             >
-              {isBangla ? 'এখনই বুক করুন' : 'Book Instantly'}
+              {isAuthenticated
+                ? isBangla
+                  ? 'এখনই বুক করুন'
+                  : 'Book Instantly'
+                : isBangla
+                ? 'বুক করতে লগইন করুন'
+                : 'Sign In to Book'}
             </button>
-            <a
-              href={`tel:${selectedTech.phone}`}
-              className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors"
-              title="Call"
-            >
-              <Phone className="w-4 h-4" />
-            </a>
+            {isAuthenticated && selectedTech.phone ? (
+              <a
+                href={`tel:${selectedTech.phone}`}
+                className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors"
+                title="Call"
+              >
+                <Phone className="w-4 h-4" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
+                title={isBangla ? 'নম্বর দেখতে লগইন করুন' : 'Sign in to call'}
+              >
+                <Lock className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       )}
 
       {/* Bottom Map Footnote */}
       <div className="absolute bottom-2 left-3 z-10 hidden sm:flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-zinc-200/60 dark:border-zinc-800/60 pointer-events-none">
-        <span>📍 {isBangla ? 'জোনে ক্লিক করে জুম করুন ও লাইভ টেকনিশিয়ান দেখুন' : 'Click any zone to zoom in & view live dispatchers'}</span>
+        <span>
+          📍{' '}
+          {isBangla
+            ? 'জোনে ক্লিক করে জুম করুন ও লাইভ টেকনিশিয়ান দেখুন'
+            : 'Click any zone to zoom in & view live dispatchers'}
+        </span>
       </div>
     </div>
   );

@@ -27,6 +27,7 @@ import {
 import { Technician } from '../../types';
 import { useApp } from '../../contexts/AppContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { HealthScoreCard } from './HealthScoreCard';
 import { BeforeAfterSlider } from './BeforeAfterSlider';
 import { ChatModal } from './ChatModal';
@@ -46,6 +47,7 @@ export const TechnicianDetailModal: React.FC<TechnicianDetailModalProps> = ({
 }) => {
   const { categories, reviews, toggleFavorite, isFavorite, addToCompare, removeFromCompare, comparedTechIds, bookings } = useApp();
   const { t, isBangla } = useLanguage();
+  const { currentUser, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -69,19 +71,61 @@ export const TechnicianDetailModal: React.FC<TechnicianDetailModalProps> = ({
 
   if (!isOpen || !technician) return null;
 
+  if (!isAuthenticated) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
+        onClick={onClose}
+      >
+        <div
+          className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-7 text-center space-y-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-12 h-12 rounded-2xl bg-orange-500/15 text-orange-600 flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-extrabold text-zinc-900 dark:text-white">
+            {isBangla ? 'প্রোফাইল দেখতে লগইন করুন' : 'Sign In Required'}
+          </h3>
+          <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            {isBangla
+              ? 'টেকনিশিয়ানের পূর্ণ প্রোফাইল, ফোন নম্বর দেখতে, মেসেজ করতে অথবা বুকিং দিতে অনুগ্রহ করে লগইন করুন।'
+              : 'Please sign in to view technician profiles, contact numbers, chat, or book services.'}
+          </p>
+          <div className="flex items-center gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-600 dark:text-zinc-300 cursor-pointer"
+            >
+              {isBangla ? 'বন্ধ করুন' : 'Close'}
+            </button>
+            <Link
+              to="/login"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold text-center"
+            >
+              {isBangla ? 'লগইন করুন' : 'Sign In'}
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isSaved = isFavorite(technician.id);
   const isCompared = comparedTechIds.includes(technician.id);
   const techReviews = reviews.filter((r) => r.technicianId === technician.id);
 
-  // Active or dummy booking for quick chat
-  const chatBooking = bookings.find((b) => b.technicianId === technician.id) || {
+  // Active or inquiry booking for quick chat
+  const chatBooking = bookings.find((b) => b.technicianId === technician.id && b.customerId === currentUser?.id) || {
     id: `book-chat-${technician.id}`,
     bookingNumber: 'SRV-CHAT',
-    customerId: 'user-cust-demo',
-    customerName: 'Customer',
-    customerPhone: '01700-000000',
-    customerCity: technician.city,
-    customerArea: technician.primaryArea,
+    customerId: currentUser?.id || '',
+    customerName: currentUser?.name || 'Customer',
+    customerPhone: currentUser?.phone || '',
+    customerCity: technician.city || 'Dhaka',
+    customerArea: technician.primaryArea || 'Dhaka',
     customerAddress: 'Direct Inquiry',
     technicianId: technician.id,
     technicianName: technician.name,

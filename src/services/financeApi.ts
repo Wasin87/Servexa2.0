@@ -73,14 +73,12 @@ async function apiRequest<T>(url: string, options: RequestInit = {}): Promise<T>
   }
 
   if (!res.ok) {
-    if (res.status === 404 || res.status >= 502) {
+    // Only fall back to local simulation when there is no real Express JSON response or gateway is down
+    if (!contentType.includes('application/json') || res.status >= 502) {
       return handleLocalFinanceFallback<T>(url, options);
     }
-    let errMsg = `HTTP ${res.status}`;
-    if (contentType.includes('application/json')) {
-      const errData = await res.json().catch(() => ({}));
-      errMsg = errData?.error || errMsg;
-    }
+    const errData = await res.json().catch(() => ({}));
+    const errMsg = errData?.error || `HTTP ${res.status}`;
     const error: any = new Error(errMsg);
     error.status = res.status;
     throw error;
@@ -89,7 +87,10 @@ async function apiRequest<T>(url: string, options: RequestInit = {}): Promise<T>
   return res.json() as Promise<T>;
 }
 
-export async function syncServerSession(user: User): Promise<{ token: string; technicianId: string | null }> {
+export async function syncServerSession(
+  user: User,
+  preferredTechId?: string
+): Promise<{ token: string; technicianId: string | null }> {
   const data = await apiRequest<{ token: string; user: { technicianId: string | null } }>('/api/auth/session', {
     method: 'POST',
     body: JSON.stringify({
@@ -99,11 +100,18 @@ export async function syncServerSession(user: User): Promise<{ token: string; te
       name: user.name,
       phone: user.phone,
       avatar: user.avatar,
+      preferredTechId,
     }),
   });
   setStoredAuthToken(data.token);
   return { token: data.token, technicianId: data.user.technicianId };
 }
+
+export const syncTechnicianToServer = (tech: Partial<import('../types').Technician> & { id: string }) =>
+  apiRequest<{ success: boolean; technicianId: string }>('/api/technicians/sync', {
+    method: 'POST',
+    body: JSON.stringify(tech),
+  });
 
 // Public & Catalog APIs
 export const fetchPublicRules = () => apiRequest<Partial<PlatformRules>>('/api/rules/public');
@@ -115,7 +123,7 @@ export const fetchCatalogOverview = () =>
     pricingRules: PricingRule[];
   }>('/api/catalog/overview');
 
-export const fetchPriceQuote = (payload: PriceQuoteRequest) =>
+export const fetchPriceQuote = (payload: PriceQuoteRequest & { technicianSnapshot?: any }) =>
   apiRequest<{ quote: PriceQuoteResponse }>('/api/pricing/quote', {
     method: 'POST',
     body: JSON.stringify(payload),

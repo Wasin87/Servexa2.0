@@ -5,16 +5,12 @@ import {
   Calendar,
   Flame,
   User,
-  MapPin,
   Wrench,
   DollarSign,
   Briefcase,
   ShieldCheck,
   Radio,
-  FileCheck,
   AlertTriangle,
-  Layers,
-  Sparkles
 } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -32,22 +28,44 @@ interface MobileNavItem {
 export const MobileNav: React.FC = () => {
   const { isBangla } = useLanguage();
   const { currentUser, role } = useAuth();
-  const { bookings } = useApp();
+  const { bookings, technicians } = useApp();
   const location = useLocation();
 
-  // Active bookings count for badge
-  const pendingRequestsCount = bookings.filter(b => b.status === 'REQUESTED').length;
+  const myTech =
+    currentUser?.role === 'TECHNICIAN'
+      ? technicians.find(
+          (t) =>
+            t.userId === currentUser.id ||
+            (currentUser.email &&
+              t.email &&
+              t.email.toLowerCase() === currentUser.email.toLowerCase())
+        )
+      : undefined;
+
+  const pendingRequestsCount =
+    currentUser?.role === 'TECHNICIAN'
+      ? bookings.filter(
+          (b) =>
+            b.status === 'REQUESTED' &&
+            (b.technicianId === currentUser.id ||
+              (myTech && b.technicianId === myTech.id))
+        ).length
+      : 0;
 
   const getCustomerItems = (): MobileNavItem[] => [
     { to: '/', label: isBangla ? 'হোম' : 'Home', icon: Home, end: true },
-    { to: '/professionals', label: isBangla ? 'মিস্ত্রি' : 'Pros', icon: Wrench },
+    { to: '/professionals', label: isBangla ? 'প্রফেশনালস' : 'Professionals', icon: Wrench },
     { to: '/heatmap', label: isBangla ? 'হিটম্যাপ' : 'Heatmap', icon: Flame },
-    { to: '/customer/bookings', label: isBangla ? 'বুকিং' : 'Bookings', icon: Calendar },
     {
-      to: currentUser ? '/customer/dashboard' : '/login',
+      to: currentUser ? '/customer/bookings' : '/login',
+      label: isBangla ? 'বুকিং' : 'Bookings',
+      icon: Calendar,
+    },
+    {
+      to: currentUser ? '/customer/dashboard?tab=profile' : '/login',
       label: isBangla ? 'প্রোফাইল' : 'Profile',
       icon: User,
-      avatar: currentUser?.avatar
+      avatar: currentUser?.avatar || undefined,
     },
   ];
 
@@ -57,24 +75,49 @@ export const MobileNav: React.FC = () => {
       label: isBangla ? 'নতুন কাজ' : 'Job Feed',
       icon: Radio,
       badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined,
-      end: true
+      end: true,
     },
-    { to: '/technician/dashboard?tab=active', label: isBangla ? 'চলতি কাজ' : 'My Jobs', icon: Briefcase },
+    {
+      to: '/technician/dashboard?tab=active',
+      label: isBangla ? 'চলতি কাজ' : 'My Jobs',
+      icon: Briefcase,
+    },
     { to: '/heatmap', label: isBangla ? 'হটস্পট' : 'Hotspots', icon: Flame },
-    { to: '/technician/dashboard?tab=earnings', label: isBangla ? 'আয়' : 'Income', icon: DollarSign },
+    {
+      to: '/technician/dashboard?tab=earnings',
+      label: isBangla ? 'আয়' : 'Income',
+      icon: DollarSign,
+    },
     {
       to: '/technician/dashboard?tab=profile',
       label: isBangla ? 'প্রোফাইল' : 'Profile',
       icon: User,
-      avatar: currentUser?.avatar
+      avatar: currentUser?.avatar || undefined,
     },
   ];
 
   const getAdminItems = (): MobileNavItem[] => [
-    { to: '/admin/dashboard?tab=overview', label: isBangla ? 'কেওয়াইসি' : 'KYC', icon: ShieldCheck, end: true },
-    { to: '/admin/dashboard?tab=bookings', label: isBangla ? 'বুকিং' : 'Bookings', icon: Calendar },
-    { to: '/admin/dashboard?tab=finance', label: isBangla ? 'ফাইন্যান্স' : 'Finance', icon: DollarSign },
-    { to: '/admin/dashboard?tab=disputes', label: isBangla ? 'অভিযোগ' : 'Disputes', icon: AlertTriangle },
+    {
+      to: '/admin/dashboard?tab=overview',
+      label: isBangla ? 'কেওয়াইসি' : 'KYC',
+      icon: ShieldCheck,
+      end: true,
+    },
+    {
+      to: '/admin/dashboard?tab=bookings',
+      label: isBangla ? 'বুকিং' : 'Bookings',
+      icon: Calendar,
+    },
+    {
+      to: '/admin/dashboard?tab=finance',
+      label: isBangla ? 'ফাইন্যান্স' : 'Finance',
+      icon: DollarSign,
+    },
+    {
+      to: '/admin/dashboard?tab=disputes',
+      label: isBangla ? 'অভিযোগ' : 'Disputes',
+      icon: AlertTriangle,
+    },
     { to: '/heatmap', label: isBangla ? 'হিটম্যাপ' : 'Heatmap', icon: Flame },
   ];
 

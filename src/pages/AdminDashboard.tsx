@@ -111,11 +111,11 @@ export const AdminDashboard: React.FC = () => {
   }, [authTokenReady, currentUser?.role, activeTab]);
 
   // Stats
-  const totalBookings = bookings.length + 120;
+  const totalBookings = bookings.length;
   const totalVerifiedTechs = technicians.filter(t => t.platformVerified).length;
   const openDisputes = reports.filter(r => r.status === 'OPEN').length;
   const pendingWarrantiesCount = warranties.filter(w => w.status === 'REQUESTED').length;
-  const platformRevenue = livePlatformCommission ?? Math.round((bookings.reduce((sum, b) => sum + (b.finalTotal || b.estimatedTotalMax || 600), 0)) * 0.1);
+  const platformRevenue = livePlatformCommission ?? Math.round((bookings.reduce((sum, b) => sum + (b.finalTotal || b.estimatedTotalMax || 0), 0)) * 0.1);
 
   const inspectedTech = inspectTechId ? technicians.find(t => t.id === inspectTechId) || null : null;
 
@@ -403,14 +403,26 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {filteredTechs.map((tech) => {
+                  {filteredTechs.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-xs text-zinc-500">
+                        {isBangla ? 'কোনো টেকনিশিয়ান পাওয়া যায়নি।' : 'No technicians found.'}
+                      </td>
+                    </tr>
+                  ) : filteredTechs.map((tech) => {
                     const comp = calculateTechnicianCompletion(tech);
                     const hasBothNid = !!(tech.nidFrontImage && tech.nidBackImage);
                     return (
                       <tr key={tech.id} className="hover:bg-stone-50/50 dark:hover:bg-zinc-800/40 transition-colors">
                         <td className="p-4">
                           <div className="flex items-center gap-3">
-                            <img src={tech.avatar} alt={tech.name} className="w-10 h-10 rounded-xl object-cover border border-orange-500/20 shrink-0" />
+                            {tech.avatar ? (
+                              <img src={tech.avatar} alt={tech.name} className="w-10 h-10 rounded-xl object-cover border border-orange-500/20 shrink-0" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/20 shrink-0">
+                                {(tech.name || 'T').charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <div>
                               <div className="font-bold text-zinc-900 dark:text-white flex items-center gap-1">
                                 <span>{tech.name}</span>
@@ -603,7 +615,11 @@ export const AdminDashboard: React.FC = () => {
 
           <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-xs">
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {filteredBookings.map((b) => (
+              {filteredBookings.length === 0 ? (
+                <div className="p-8 text-center text-xs text-zinc-500">
+                  {isBangla ? 'এখনো কোনো বুকিং পাওয়া যায়নি।' : 'No bookings found.'}
+                </div>
+              ) : filteredBookings.map((b) => (
                 <div key={b.id} className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-3 hover:bg-stone-50 dark:hover:bg-zinc-800/40">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -656,7 +672,11 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {reports.map((rep) => (
+            {reports.length === 0 ? (
+              <div className="p-8 text-center rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500">
+                {isBangla ? 'বর্তমানে কোনো অভিযোগ বা ডিসপুট নেই।' : 'No open disputes or reports.'}
+              </div>
+            ) : reports.map((rep) => (
               <div
                 key={rep.id}
                 className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3"
@@ -1057,11 +1077,17 @@ export const AdminDashboard: React.FC = () => {
             <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95">
               <div className="flex items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
                 <div className="flex items-center gap-3.5">
-                  <img
-                    src={inspectedTech.avatar}
-                    alt={inspectedTech.name}
-                    className="w-16 h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0"
-                  />
+                  {inspectedTech.avatar ? (
+                    <img
+                      src={inspectedTech.avatar}
+                      alt={inspectedTech.name}
+                      className="w-16 h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-orange-600 text-white font-black text-xl flex items-center justify-center border-2 border-orange-500 shadow-sm shrink-0">
+                      {(inspectedTech.name || 'T').charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">

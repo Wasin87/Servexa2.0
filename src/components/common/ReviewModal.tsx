@@ -3,6 +3,7 @@ import { Star, X, Check } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useApp } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { Booking } from '../../types';
 
 interface ReviewModalProps {
@@ -23,6 +24,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, isOpen, onClo
   const { t, isBangla } = useLanguage();
   const { submitReview } = useApp();
   const { currentUser } = useAuth();
+  const { showToast, triggerConfettiBurst } = useToast();
 
   const [overallRating, setOverallRating] = useState<number>(5);
   const [workQuality, setWorkQuality] = useState<number>(5);
@@ -41,9 +43,9 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, isOpen, onClo
 
     submitReview({
       bookingId: booking.id,
-      customerId: currentUser?.id || booking.customerId || 'user-cust-demo',
+      customerId: currentUser?.id || booking.customerId || '',
       customerName: currentUser?.name || booking.customerName || (isBangla ? 'গ্রাহক' : 'Customer'),
-      customerAvatar: currentUser?.avatar || '/src/assets/images/tech_portrait_senior_1794936426060.jpg',
+      customerAvatar: currentUser?.avatar || '',
       technicianId: booking.technicianId,
       overallRating,
       workQuality,
@@ -60,6 +62,8 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, isOpen, onClo
     });
 
     setIsSubmitting(false);
+    triggerConfettiBurst();
+    showToast(isBangla ? 'আপনার মূল্যবান রিভিউ জমা হয়েছে!' : 'Your review has been submitted!');
     onClose();
   };
 

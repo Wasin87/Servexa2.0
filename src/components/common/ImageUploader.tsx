@@ -19,7 +19,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   label,
   shape = 'square',
   className = '',
-  showPresets = true
+  showPresets = false
 }) => {
   const { isBangla } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -144,17 +144,31 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           className="relative group cursor-pointer shrink-0"
           title={isBangla ? 'ছবি পরিবর্তন করতে ক্লিক করুন' : 'Click to change photo'}
         >
-          <img
-            src={preview || '/src/assets/images/tech_portrait_senior_1794936426060.jpg'}
-            alt="Upload Preview"
-            className={`object-cover border-2 border-orange-500 shadow-md transition-transform group-hover:scale-105 ${
-              shape === 'circle'
-                ? 'w-20 h-20 rounded-full'
-                : shape === 'banner'
-                ? 'w-32 h-20 rounded-xl'
-                : 'w-20 h-20 rounded-2xl'
-            }`}
-          />
+          {preview ? (
+            <img
+              src={preview}
+              alt="Upload Preview"
+              className={`object-cover border-2 border-orange-500 shadow-md transition-transform group-hover:scale-105 ${
+                shape === 'circle'
+                  ? 'w-20 h-20 rounded-full'
+                  : shape === 'banner'
+                  ? 'w-32 h-20 rounded-xl'
+                  : 'w-20 h-20 rounded-2xl'
+              }`}
+            />
+          ) : (
+            <div
+              className={`bg-stone-200 dark:bg-zinc-700 border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex items-center justify-center text-zinc-500 dark:text-zinc-300 transition-transform group-hover:scale-105 ${
+                shape === 'circle'
+                  ? 'w-20 h-20 rounded-full'
+                  : shape === 'banner'
+                  ? 'w-32 h-20 rounded-xl'
+                  : 'w-20 h-20 rounded-2xl'
+              }`}
+            >
+              <ImageIcon className="w-7 h-7" />
+            </div>
+          )}
           <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white ${
             shape === 'circle' ? 'rounded-full' : 'rounded-2xl'
           }`}>

@@ -1,26 +1,33 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, Sparkles, MapPin, Star, Wrench, User } from 'lucide-react';
+import { Search, Sparkles, Star, Wrench, User, Lock, Clock } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../contexts/AuthContext';
 import { diagnoseProblemWithRules } from '../services/problemDiagnosis';
+import { toBengaliNumber } from '../utils/geoUtils';
 
 export const SearchPage: React.FC = () => {
   const { categories, technicians } = useApp();
   const { t, isBangla } = useLanguage();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
 
   const diagnosis = query.trim().length > 3 ? diagnoseProblemWithRules(query, categories) : null;
 
+  const getCategoryName = (skillId: string) => {
+    const cat = categories.find((c) => c.id === skillId);
+    if (!cat) return skillId || (isBangla ? 'টেকনিশিয়ান' : 'Technician');
+    return isBangla ? cat.nameBn : cat.nameEn;
+  };
+
   const matchedTechs = technicians.filter(
     (tech) =>
-      (tech.skillVerified || tech.platformVerified) &&
-      (tech.name.toLowerCase().includes(query.toLowerCase()) ||
-        (tech.district || '').toLowerCase().includes(query.toLowerCase()) ||
-        tech.primaryArea.toLowerCase().includes(query.toLowerCase()) ||
-        tech.serviceAreas.some(a => a.toLowerCase() === query.toLowerCase()) ||
-        tech.skills.some(s => s.toLowerCase().includes(query.toLowerCase())))
+      tech.name.toLowerCase().includes(query.toLowerCase()) ||
+      tech.skills.some((s) =>
+        getCategoryName(s).toLowerCase().includes(query.toLowerCase())
+      )
   );
 
   const matchedCategories = categories.filter(
@@ -134,54 +141,94 @@ export const SearchPage: React.FC = () => {
             {isBangla ? `উপযুক্ত টেকনিশিয়ান (${matchedTechs.length})` : `Matched Technicians (${matchedTechs.length})`}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {matchedTechs.map((tech) => (
-              <div
-                key={tech.id}
-                onClick={() => navigate(`/professionals/${tech.id}`)}
-                className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-orange-500/60 hover:shadow-lg transition-all duration-200 flex flex-col justify-between cursor-pointer group"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <img
-                    src={tech.avatar}
-                    alt={tech.name}
-                    className="w-13 h-13 rounded-full object-cover ring-2 ring-orange-500/20 group-hover:ring-orange-500 transition-all shadow-sm"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 group-hover:text-orange-600 transition-colors truncate">
-                      {tech.name}
-                    </h3>
-                    <div className="flex items-center gap-1 text-[11px] text-amber-500 font-bold">
-                      <Star className="w-3 h-3 fill-amber-400" />
-                      <span>{tech.rating}</span>
-                      <span className="text-zinc-400 font-normal">
-                        ({tech.completedJobs} {isBangla ? 'কাজ' : 'jobs'})
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-zinc-400 flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3 h-3 text-orange-500" />
-                      <span className="truncate">{tech.primaryArea}, {tech.district || tech.city}</span>
+            {matchedTechs.map((tech) => {
+              const workLabel =
+                tech.skills && tech.skills.length > 0
+                  ? tech.skills.map(getCategoryName).join(', ')
+                  : isBangla
+                  ? 'সাধারণ টেকনিশিয়ান'
+                  : 'General Technician';
+
+              return (
+                <div
+                  key={tech.id}
+                  className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    {tech.avatar ? (
+                      <img
+                        src={tech.avatar}
+                        alt={tech.name}
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-orange-500/20 shadow-sm shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-orange-50 dark:bg-orange-950/50 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-800 flex items-center justify-center shrink-0">
+                        <User className="w-6 h-6" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <h3 className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 truncate">
+                        {tech.name}
+                      </h3>
+                      <div className="flex items-center gap-1 text-[11px] font-semibold text-orange-600 dark:text-orange-400">
+                        <Wrench className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{workLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-[11px]">
+                        <span className="inline-flex items-center gap-1 text-amber-500 font-bold">
+                          <Star className="w-3 h-3 fill-amber-400" />
+                          <span>{toBengaliNumber(Number(tech.rating || 0).toFixed(1))}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-zinc-500">
+                          <Clock className="w-3 h-3" />
+                          <span>
+                            {toBengaliNumber(tech.experienceYears || 0)} {isBangla ? 'বছর' : 'yrs'}
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-2 mt-1" onClick={(e) => e.stopPropagation()}>
-                  <Link
-                    to={`/book?techId=${tech.id}`}
-                    className="py-1.5 text-center text-xs font-bold rounded-xl bg-orange-600 hover:bg-orange-500 text-white transition-colors"
-                  >
-                    {t.actions.bookNow}
-                  </Link>
-                  <Link
-                    to={`/professionals/${tech.id}`}
-                    className="py-1.5 text-center text-xs font-semibold rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1"
-                  >
-                    <User className="w-3 h-3" />
-                    <span>{isBangla ? 'প্রোফাইল' : 'Profile'}</span>
-                  </Link>
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                    <button
+                      type="button"
+                      disabled={!isAuthenticated}
+                      aria-disabled={!isAuthenticated}
+                      onClick={
+                        isAuthenticated ? () => navigate(`/book?techId=${tech.id}`) : undefined
+                      }
+                      className={`py-1.5 text-center text-xs font-bold rounded-xl transition-colors inline-flex items-center justify-center gap-1 ${
+                        isAuthenticated
+                          ? 'bg-orange-600 hover:bg-orange-500 text-white cursor-pointer'
+                          : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed pointer-events-none select-none opacity-75'
+                      }`}
+                    >
+                      {!isAuthenticated && <Lock className="w-3 h-3" />}
+                      <span>{isBangla ? 'বুক নাও' : 'Book Now'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isAuthenticated}
+                      aria-disabled={!isAuthenticated}
+                      onClick={
+                        isAuthenticated
+                          ? () => navigate(`/professionals/${tech.id}`)
+                          : undefined
+                      }
+                      className={`py-1.5 text-center text-xs font-semibold rounded-xl border transition-colors inline-flex items-center justify-center gap-1 ${
+                        isAuthenticated
+                          ? 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer'
+                          : 'border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/60 text-zinc-400 dark:text-zinc-500 cursor-not-allowed pointer-events-none select-none opacity-75'
+                      }`}
+                    >
+                      {!isAuthenticated ? <Lock className="w-3 h-3" /> : <User className="w-3 h-3" />}
+                      <span>{isBangla ? 'প্রোফাইল' : 'Profile'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

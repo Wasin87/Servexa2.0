@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isValidId(userId)
+        && request.resource.data.keys().hasAll(['id', 'name', 'role'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 150
+        && request.resource.data.role in ['CUSTOMER', 'TECHNICIAN', 'ADMIN'];
+      allow delete: if isValidId(userId);
+    }
+
+    match /technicians/{technicianId} {
+      allow read: if true;
+      allow create, update: if isValidId(technicianId)
+        && request.resource.data.keys().hasAll(['id', 'name', 'userId'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 150;
+      allow delete: if isValidId(technicianId);
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update: if isValidId(categoryId)
+        && request.resource.data.keys().hasAll(['id', 'nameEn', 'nameBn']);
+      allow delete: if isValidId(categoryId);
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if true;
+      allow create, update: if isValidId(bookingId)
+        && request.resource.data.keys().hasAll(['id', 'bookingNumber', 'customerId', 'technicianId', 'status']);
+      allow delete: if isValidId(bookingId);
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create, update: if isValidId(reviewId)
+        && request.resource.data.keys().hasAll(['id', 'bookingId', 'customerId', 'technicianId', 'overallRating']);
+      allow delete: if isValidId(reviewId);
+    }
+
+    match /warranties/{warrantyId} {
+      allow read: if true;
+      allow create, update: if isValidId(warrantyId)
+        && request.resource.data.keys().hasAll(['id', 'bookingId', 'customerId', 'technicianId', 'issueDescription']);
+      allow delete: if isValidId(warrantyId);
+    }
+
+    match /chatMessages/{messageId} {
+      allow read: if true;
+      allow create, update: if isValidId(messageId)
+        && request.resource.data.keys().hasAll(['id', 'bookingId', 'senderId', 'timestamp']);
+      allow delete: if isValidId(messageId);
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow write: if isValidId(notificationId);
+    }
+
+    match /reports/{reportId} {
+      allow read: if true;
+      allow create, update: if isValidId(reportId)
+        && request.resource.data.keys().hasAll(['id', 'bookingId', 'reporterId', 'status']);
+      allow delete: if isValidId(reportId);
+    }
+
+    match /maintenanceReminders/{reminderId} {
+      allow read: if true;
+      allow create, update: if isValidId(reminderId)
+        && request.resource.data.keys().hasAll(['id', 'customerId', 'categoryId', 'titleEn']);
+      allow delete: if isValidId(reminderId);
+    }
+
+    match /test/{docId} {
+      allow read: if true;
+      allow write: if isValidId(docId);
+    }
+  }
+}

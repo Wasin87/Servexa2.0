@@ -1,4 +1,4 @@
-import { initialBookings, initialCategories, initialTechnicians } from '../data/seedData';
+import { initialCategories } from '../data/seedData';
 import type { Booking, ServiceCategory, Technician } from '../types';
 import type {
   AdditionalChargeRequest,
@@ -57,7 +57,7 @@ function getDefaultRules(): PlatformRules {
   return {
     version: 1,
     updatedAt: now,
-    updatedBy: 'user-admin-demo',
+    updatedBy: 'admin-wasin',
     general: {
       platformName: 'Servexa',
       businessTagline: 'Smart Home Service & Technician Platform',
@@ -182,7 +182,7 @@ function getAppBookings(): Booking[] {
   } catch {
     // ignore
   }
-  return initialBookings;
+  return [];
 }
 
 function getAppTechnicians(): Technician[] {
@@ -192,7 +192,7 @@ function getAppTechnicians(): Technician[] {
   } catch {
     // ignore
   }
-  return initialTechnicians;
+  return [];
 }
 
 function createInitialState(): LocalFinanceState {
@@ -278,40 +278,10 @@ function createInitialState(): LocalFinanceState {
       active: true,
       updatedAt: now,
     });
-
-    const acctId = `pa-${tech.id}`;
-    payoutAccounts.push({
-      id: acctId,
-      technicianId: tech.id,
-      provider: idx % 2 === 0 ? 'bkash' : 'nagad',
-      accountTitle: tech.name,
-      accountNumber: tech.phone.replace(/-/g, ''),
-      verificationStatus: 'VERIFIED',
-      isDefault: true,
-      createdAt: now,
-      verifiedAt: now,
-    });
-
-    // Give each technician distinct, realistic historical baseline ledger entries matching their profile
-    const historicalJobsCount = Math.max(2, Math.min(8, Math.round((tech.completedJobs || 20) / 18)));
-    const grossSample = historicalJobsCount * (650 + idx * 140);
-    const netCredit = Math.round(grossSample * 0.9);
-    ledgerEntries.push({
-      id: `led-seed-${tech.id}-earn`,
-      technicianId: tech.id,
-      bookingId: `seed-hist-${tech.id}`,
-      entryType: 'EARNING_AVAILABLE',
-      amount: netCredit,
-      direction: 'CREDIT',
-      description: `Settled 90% net earnings across completed jobs (${tech.name})`,
-      referenceKey: `seed-earn-${tech.id}`,
-      createdBy: 'system',
-      createdAt: now,
-    });
   });
 
-  // Also map initialBookings into isolated per-technician ledger entries & snapshots
-  initialBookings.forEach((b) => {
+  // Map existing active bookings into isolated per-technician ledger entries & snapshots
+  getAppBookings().forEach((b) => {
     const finalAmt = b.finalTotal || b.estimatedTotalMax || 700;
     const comm = Math.round(finalAmt * 0.1 * 100) / 100;
     const net = Math.round((finalAmt - comm) * 100) / 100;
@@ -403,27 +373,13 @@ function createInitialState(): LocalFinanceState {
       {
         id: 'rv-1',
         version: 1,
-        changedBy: 'user-admin-demo',
+        changedBy: 'admin-wasin',
         summary: 'Initial Servexa 90/10 platform governance policy',
         rulesJson: JSON.stringify(rules),
         createdAt: now,
       },
     ],
-    auditLogs: [
-      {
-        id: 'audit-1',
-        adminId: 'user-admin-demo',
-        adminName: 'আরিফুল ইসলাম (Admin)',
-        section: 'PLATFORM_RULES',
-        action: 'INIT_RULES',
-        targetId: '1',
-        previousValue: '{}',
-        newValue: JSON.stringify({ commission: '10%', reserve: 500 }),
-        reason: 'Initial platform ledger setup',
-        ruleVersion: 1,
-        createdAt: now,
-      },
-    ],
+    auditLogs: [],
     categories,
     subcategories,
     pricingRules,
@@ -469,7 +425,7 @@ function getSessionUser(): LocalSessionUser {
   } catch {
     // ignore
   }
-  return { userId: 'user-cust-demo', role: 'CUSTOMER', technicianId: null, name: 'সাকিব আল হাসান' };
+  return { userId: '', role: 'CUSTOMER', technicianId: null, name: '' };
 }
 
 function computeTechWallet(state: LocalFinanceState, technicianId: string): WalletSummary {
@@ -601,22 +557,26 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
     const ownedTech = techs.find(
       (t) => t.userId === body.userId || (body.email && t.email === body.email)
     );
-    const techId = ownedTech?.id || (body.role === 'TECHNICIAN' ? 'tech-1' : null);
+    const techId = ownedTech?.id || body.preferredTechId || null;
     const nextSession: LocalSessionUser = {
-      userId: String(body.userId || 'user-cust-demo'),
+      userId: String(body.userId || ''),
       role: body.role || 'CUSTOMER',
       technicianId: techId,
       name: String(body.name || 'User'),
     };
     localStorage.setItem(SESSION_USER_KEY, JSON.stringify(nextSession));
     return {
-      token: `local-vercel-token-${nextSession.userId}`,
+      token: `local-token-${nextSession.userId}`,
       user: {
         id: nextSession.userId,
         role: nextSession.role,
         technicianId: techId,
       },
     } as T;
+  }
+
+  if (path === '/api/technicians/sync' && method === 'POST') {
+    return { success: true, technicianId: String(body.id || '') } as T;
   }
 
   // 2. Public & Catalog
@@ -633,12 +593,12 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
   }
 
   if (path === '/api/pricing/quote' && method === 'POST') {
-    const req = body as PriceQuoteRequest;
+    const req = body as PriceQuoteRequest & { technicianSnapshot?: any };
     const rule =
       state.pricingRules.find((r) => r.subcategoryId === req.subcategoryId) ||
       state.pricingRules.find((r) => r.categoryId === req.categoryId) ||
       state.pricingRules[0];
-    const tech = techs.find((t) => t.id === req.technicianId) || techs[0];
+    const tech = techs.find((t) => t.id === req.technicianId) || req.technicianSnapshot;
     const cat = state.categories.find((c) => c.id === req.categoryId) || state.categories[0];
 
     const servicePrice = rule?.defaultPrice ?? cat?.startingPrice ?? 450;
@@ -661,8 +621,8 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
       categoryId: req.categoryId,
       subcategoryId: req.subcategoryId,
       pricingRuleId: rule?.id,
-      technicianId: tech.id,
-      technicianName: tech.name,
+      technicianId: tech?.id || req.technicianId,
+      technicianName: tech?.name || 'Technician',
       serviceNameEn: cat?.nameEn || 'Home Service',
       serviceNameBn: cat?.nameBn || 'হোম সার্ভিস',
       servicePrice,
@@ -864,14 +824,14 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
 
   // 4. Technician Services & Pricing
   if (path === '/api/technician/services' && method === 'GET') {
-    const reqTechId = parsedUrl.searchParams.get('technicianId') || session.technicianId || 'tech-1';
+    const reqTechId = parsedUrl.searchParams.get('technicianId') || session.technicianId || '';
     const services = state.techServices.filter((s) => s.technicianId === reqTechId);
     const history = state.priceHistory.filter((h) => h.technicianId === reqTechId);
     return { technicianId: reqTechId, services, history } as T;
   }
 
   if (path === '/api/technician/services/select' && method === 'POST') {
-    const techId = session.technicianId || 'tech-1';
+    const techId = session.technicianId || '';
     const sub = state.subcategories.find((s) => s.id === body.subcategoryId);
     const rule = state.pricingRules.find((r) => r.subcategoryId === body.subcategoryId) || state.pricingRules[0];
     const id = `tsvc-${Date.now()}`;
@@ -954,7 +914,7 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
       id: `snap-${bId}`,
       bookingId: bId,
       categoryId: body.categoryId || 'electrical',
-      technicianId: body.technicianId || 'tech-1',
+      technicianId: body.technicianId || '',
       customerId: session.userId,
       serviceNameEn: body.serviceNameEn || 'Home Service',
       serviceNameBn: body.serviceNameBn || 'হোম সার্ভিস',
@@ -1000,7 +960,7 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
     const req: AdditionalChargeRequest = {
       id: `echg-${Date.now()}`,
       bookingId: bId,
-      technicianId: session.technicianId || 'tech-1',
+      technicianId: session.technicianId || '',
       chargeType: body.chargeType || 'EXTRA_WORK',
       reason: body.reason || '',
       amount: Number(body.amount || 0),
@@ -1058,7 +1018,7 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
       id: `ptx-${Date.now()}`,
       bookingId: bId,
       customerId: booking?.customerId || session.userId,
-      technicianId: booking?.technicianId || 'tech-1',
+      technicianId: booking?.technicianId || '',
       method: payMethod,
       amount,
       currency: 'BDT',
@@ -1105,9 +1065,9 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
       id: `cc-${Date.now()}`,
       bookingId: bId,
       bookingNumber: booking?.bookingNumber || bId,
-      technicianId: booking?.technicianId || session.technicianId || 'tech-1',
+      technicianId: booking?.technicianId || session.technicianId || '',
       technicianName: booking?.technicianName || 'Technician',
-      customerId: booking?.customerId || 'user-cust-demo',
+      customerId: booking?.customerId || session.userId,
       amountCollected: amount,
       commissionAmount: comm,
       technicianShareAmount: amount - comm,
@@ -1151,7 +1111,7 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
 
   // 6. Technician Wallet & Period Stats (Strictly Per-Technician Isolated)
   if (path === '/api/wallet' && method === 'GET') {
-    const reqTechId = parsedUrl.searchParams.get('technicianId') || session.technicianId || 'tech-1';
+    const reqTechId = parsedUrl.searchParams.get('technicianId') || session.technicianId || '';
     const wallet = computeTechWallet(state, reqTechId);
     const allBookings = getAppBookings().filter((b) => b.technicianId === reqTechId && b.status === 'COMPLETED');
     const techEarnedSum = allBookings.reduce((s, b) => s + Math.round((b.finalTotal || b.estimatedTotalMax || 600) * 0.9), 0);
@@ -1183,7 +1143,7 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
   }
 
   if (path === '/api/wallet/payout-accounts' && method === 'POST') {
-    const techId = session.technicianId || 'tech-1';
+    const techId = session.technicianId || '';
     const acct: PayoutAccount = {
       id: `pa-${Date.now()}`,
       technicianId: techId,
@@ -1203,7 +1163,7 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
   }
 
   if (path === '/api/wallet/withdraw' && method === 'POST') {
-    const techId = session.technicianId || 'tech-1';
+    const techId = session.technicianId || '';
     const wallet = computeTechWallet(state, techId);
     const amount = Number(body.amount || 0);
     if (amount > wallet.withdrawableBalance) {

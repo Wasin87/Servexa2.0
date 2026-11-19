@@ -238,7 +238,7 @@ export const BookingDetailPage: React.FC = () => {
     submitWarrantyClaim({
       bookingId: booking.id,
       bookingNumber: booking.bookingNumber,
-      customerId: currentUser?.id || booking.customerId || 'user-cust-demo',
+      customerId: currentUser?.id || booking.customerId || '',
       customerName: currentUser?.name || booking.customerName,
       customerPhone: currentUser?.phone || booking.customerPhone,
       customerArea: booking.customerArea,
@@ -551,11 +551,17 @@ export const BookingDetailPage: React.FC = () => {
           {/* Assigned Technician */}
           <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
             <div className="flex items-center gap-3">
-              <img
-                src={booking.technicianAvatar}
-                alt={booking.technicianName}
-                className="w-14 h-14 rounded-2xl object-cover border border-orange-500"
-              />
+              {booking.technicianAvatar ? (
+                <img
+                  src={booking.technicianAvatar}
+                  alt={booking.technicianName}
+                  className="w-14 h-14 rounded-2xl object-cover border border-orange-500"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-2xl bg-orange-600 text-white font-bold flex items-center justify-center border border-orange-500">
+                  {(booking.technicianName || 'T').slice(0, 2).toUpperCase()}
+                </div>
+              )}
               <div>
                 <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
                   {booking.technicianName}

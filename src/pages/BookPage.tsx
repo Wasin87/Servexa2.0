@@ -17,6 +17,7 @@ import {
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { UrgencyLevel } from '../types';
 import { resolveCustomerCoordinates, toBengaliNumber } from '../utils/geoUtils';
 import { ServiceLocationPickerMap } from '../components/map/ServiceLocationPickerMap';
@@ -41,6 +42,7 @@ export const BookPage: React.FC = () => {
   const { categories, technicians, createBooking } = useApp();
   const { t, isBangla } = useLanguage();
   const { currentUser, isAuthenticated } = useAuth();
+  const { showToast, triggerConfettiBurst } = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -139,6 +141,13 @@ export const BookPage: React.FC = () => {
     }
   }, [selectedCategoryId, subcategories.length]);
 
+  // Keep selectedTechId synced when technicians load from Firestore
+  useEffect(() => {
+    if (!selectedTechId && selectableTechnicians.length > 0) {
+      setSelectedTechId(paramTechId || selectableTechnicians[0].id);
+    }
+  }, [selectableTechnicians.length, paramTechId, selectedTechId]);
+
   const districtsInDivision = getDistrictsByDivision(customerDivision);
   const activeDistrictObj = findDistrict(customerDistrict) || districtsInDivision[0] || BANGLADESH_DISTRICTS[0];
   const areasInDistrict = activeDistrictObj.areas;
@@ -158,6 +167,7 @@ export const BookPage: React.FC = () => {
         categoryId: selectedCategory.id,
         subcategoryId: selectedSubcategoryId || undefined,
         technicianId: selectedTech.id,
+        technicianSnapshot: selectedTech,
         urgency,
         isNightService,
         isWeekendService,
@@ -342,7 +352,14 @@ export const BookPage: React.FC = () => {
       return;
     }
 
-    if (!selectedTech) return;
+    if (!selectedTech) {
+      const noTechMsg = isBangla
+        ? 'এই মুহূর্তে কোনো নিবন্ধিত টেকনিশিয়ান পাওয়া যায়নি। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।'
+        : 'No registered technicians are available right now. Please try again later.';
+      setGateError(noTechMsg);
+      showToast(noTechMsg, 'error');
+      return;
+    }
 
     setIsSubmitting(true);
     const resolved =
@@ -356,6 +373,7 @@ export const BookPage: React.FC = () => {
           categoryId: selectedCategory.id,
           subcategoryId: selectedSubcategoryId || undefined,
           technicianId: selectedTech.id,
+          technicianSnapshot: selectedTech,
           urgency,
           isNightService,
           isWeekendService,
@@ -378,12 +396,13 @@ export const BookPage: React.FC = () => {
         serverCreatedBooking = res.booking;
       } catch (err: any) {
         setIsSubmitting(false);
-        setGateError(
+        const errMsg =
           err?.message ||
-            (isBangla
-              ? 'সার্ভার ভ্যালিডেশনে বুকিং নিশ্চিত করা যায়নি।'
-              : 'Booking could not be confirmed by server validation.')
-        );
+          (isBangla
+            ? 'সার্ভার ভ্যালিডেশনে বুকিং নিশ্চিত করা যায়নি।'
+            : 'Booking could not be confirmed by server validation.');
+        setGateError(errMsg);
+        showToast(errMsg, 'error');
         return;
       }
     }
@@ -421,6 +440,13 @@ export const BookPage: React.FC = () => {
     });
 
     setIsSubmitting(false);
+    triggerConfettiBurst();
+    showToast(
+      isBangla
+        ? `🎉 অভিনন্দন! বুকিং #${booking.bookingNumber} সফলভাবে নিশ্চিত হয়েছে।`
+        : `🎉 Booking #${booking.bookingNumber} confirmed successfully!`,
+      'success'
+    );
     navigate(`/booking/${booking.id}`);
   };
 
@@ -587,13 +613,20 @@ export const BookPage: React.FC = () => {
               <select
                 value={selectedTechId}
                 onChange={(e) => setSelectedTechId(e.target.value)}
-                className="w-full px-3 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium"
+                disabled={selectableTechnicians.length === 0}
+                className="w-full px-3 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium disabled:opacity-60"
               >
-                {selectableTechnicians.map((tech) => (
-                  <option key={tech.id} value={tech.id}>
-                    {tech.name} ({tech.primaryArea || tech.district || tech.city} · ★{tech.rating})
+                {selectableTechnicians.length === 0 ? (
+                  <option value="">
+                    {isBangla ? 'কোনো নিবন্ধিত মিস্ত্রি নেই' : 'No registered technicians yet'}
                   </option>
-                ))}
+                ) : (
+                  selectableTechnicians.map((tech) => (
+                    <option key={tech.id} value={tech.id}>
+                      {tech.name} ({tech.primaryArea || tech.district || tech.city || (isBangla ? 'বাংলাদেশ' : 'BD')} · ★{tech.rating})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
@@ -1098,10 +1131,20 @@ export const BookPage: React.FC = () => {
         <div className="pt-2">
           <button
             type="submit"
-            disabled={isSubmitting || !canBook}
+            disabled={isSubmitting || !canBook || !selectedTech}
             className="w-full py-3.5 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:bg-zinc-400 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
-            <span>{isSubmitting ? (isBangla ? 'প্রসেসিং হচ্ছে...' : 'Processing...') : t.booking.submitBooking}</span>
+            <span>
+              {isSubmitting
+                ? isBangla
+                  ? 'প্রসেসিং হচ্ছে...'
+                  : 'Processing...'
+                : !selectedTech
+                ? isBangla
+                  ? 'কোনো টেকনিশিয়ান উপলব্ধ নেই'
+                  : 'No Technician Available'
+                : t.booking.submitBooking}
+            </span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>

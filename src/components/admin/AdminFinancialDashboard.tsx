@@ -22,6 +22,7 @@ import {
   refundPaymentAdmin,
   setTechnicianReserveAdmin,
   setTechnicianRestrictionAdmin,
+  syncServerSession,
   verifyCashDepositAdmin,
   verifyPayoutAccountAdmin,
 } from '../../services/financeApi';
@@ -117,7 +118,7 @@ export const AdminFinancialDashboard: React.FC = () => {
   const [dateTo, setDateTo] = useState('');
 
   const [subTab, setSubTab] = useState<'overview' | 'withdrawals' | 'cash' | 'wallets' | 'ledger'>('overview');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -131,10 +132,17 @@ export const AdminFinancialDashboard: React.FC = () => {
   };
 
   const loadOverview = async () => {
-    if (!authTokenReady || currentUser?.role !== 'ADMIN') return;
+    if (!currentUser || currentUser.role !== 'ADMIN') {
+      setLoading(false);
+      setErrorMsg(isBangla ? 'আর্থিক তথ্য দেখার জন্য অ্যাডমিন অ্যাকাউন্টে লগইন করুন।' : 'Admin authentication required.');
+      return;
+    }
     setLoading(true);
     setErrorMsg(null);
     try {
+      if (!authTokenReady) {
+        await syncServerSession(currentUser);
+      }
       const data = await fetchAdminFinanceOverview({
         search: searchFilter,
         status: statusFilter,
@@ -161,6 +169,8 @@ export const AdminFinancialDashboard: React.FC = () => {
   useEffect(() => {
     if (authTokenReady && currentUser?.role === 'ADMIN') {
       void loadOverview();
+    } else {
+      setLoading(false);
     }
   }, [authTokenReady, currentUser?.role]);
 
@@ -339,8 +349,9 @@ export const AdminFinancialDashboard: React.FC = () => {
 
   if (loading && !summary) {
     return (
-      <div className="p-6 text-center text-xs text-zinc-500">
-        {isBangla ? 'অ্যাডমিন আর্থিক তথ্য লোড হচ্ছে...' : 'Loading Admin financial telemetry...'}
+      <div className="p-6 text-center text-xs text-zinc-500 flex items-center justify-center gap-2">
+        <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />
+        <span>{isBangla ? 'অ্যাডমিন আর্থিক তথ্য লোড হচ্ছে...' : 'Loading Admin financial telemetry...'}</span>
       </div>
     );
   }
@@ -385,9 +396,10 @@ export const AdminFinancialDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => void loadOverview()}
-            className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 cursor-pointer flex items-center gap-1"
+            disabled={loading}
+            className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 cursor-pointer flex items-center gap-1 disabled:opacity-60"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
@@ -448,6 +460,27 @@ export const AdminFinancialDashboard: React.FC = () => {
       </div>
 
       {/* SUB-TAB 1: 16 SERVER-COMPUTED METRICS */}
+      {subTab === 'overview' && !summary && !loading && (
+        <div className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div>
+            <div className="font-black text-zinc-900 dark:text-white">
+              {isBangla ? 'আর্থিক সারাংশ প্রস্তুত' : 'Financial Overview'}
+            </div>
+            <div className="text-zinc-500">
+              {isBangla ? 'সর্বশেষ আর্থিক তথ্য লোড করতে রিফ্রেশ বাটনে ক্লিক করুন।' : 'Click Refresh to load the latest platform financial summary.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadOverview()}
+            className="px-4 py-2 rounded-xl bg-orange-600 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>{isBangla ? 'লোড করুন' : 'Load Overview'}</span>
+          </button>
+        </div>
+      )}
+
       {subTab === 'overview' && summary && (
         <div className="space-y-4 sm:space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3.5 text-xs">

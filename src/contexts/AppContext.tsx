@@ -15,15 +15,38 @@ import {
   WarrantyClaim,
   AvailabilityStatus,
 } from '../types';
-import {
-  initialCategories,
-  initialTechnicians,
-  initialBookings,
-  initialNotifications,
-} from '../data/seedData';
+import { initialCategories } from '../data/seedData';
 import { useAuth } from './AuthContext';
 import { resolveCustomerCoordinates } from '../utils/geoUtils';
-import { getStoredAuthToken, updateServerBookingStatus } from '../services/financeApi';
+import {
+  getStoredAuthToken,
+  syncTechnicianToServer,
+  updateServerBookingStatus,
+} from '../services/financeApi';
+import {
+  initializeFirestoreDatabase,
+  subscribeToFirestoreBookings,
+  saveBookingToFirestore,
+  updateBookingInFirestore,
+  subscribeToFirestoreTechnicians,
+  saveTechnicianToFirestore,
+  deleteTechnicianFromFirestore,
+  subscribeToFirestoreReviews,
+  saveReviewToFirestore,
+  subscribeToFirestoreWarranties,
+  saveWarrantyToFirestore,
+  subscribeToFirestoreNotifications,
+  saveNotificationToFirestore,
+  markNotificationReadInFirestore,
+  subscribeToFirestoreReports,
+  saveReportToFirestore,
+  subscribeToFirestoreReminders,
+  saveMaintenanceReminderToFirestore,
+  deleteMaintenanceReminderFromFirestore,
+  subscribeToFirestoreChatMessages,
+  saveChatMessageToFirestore,
+  markChatMessageReadInFirestore,
+} from '../services/firestoreService';
 
 interface AppContextType {
   categories: ServiceCategory[];
@@ -48,7 +71,12 @@ interface AppContextType {
   addToCompare: (technicianId: string) => boolean;
   removeFromCompare: (technicianId: string) => void;
   clearCompare: () => void;
-  sendMessage: (bookingId: string, text: string, attachmentUrl?: string, senderRoleOverride?: 'CUSTOMER' | 'TECHNICIAN') => void;
+  sendMessage: (
+    bookingId: string,
+    text: string,
+    attachmentUrl?: string,
+    senderRoleOverride?: 'CUSTOMER' | 'TECHNICIAN'
+  ) => void;
   markChatMessagesRead: (bookingId: string, readerRole: 'CUSTOMER' | 'TECHNICIAN') => void;
   getUnreadChatCount: (bookingId?: string, forRole?: 'CUSTOMER' | 'TECHNICIAN') => number;
   markNotificationRead: (notificationId: string) => void;
@@ -60,7 +88,11 @@ interface AppContextType {
   addMaintenanceReminder: (reminder: Omit<MaintenanceReminder, 'id' | 'active'>) => void;
   deleteMaintenanceReminder: (id: string) => void;
   updateTechnicianAvailability: (technicianId: string, availability: AvailabilityStatus) => void;
-  verifyTechnicianField: (technicianId: string, field: 'phoneVerified' | 'nidVerified' | 'skillVerified' | 'platformVerified', value: boolean) => void;
+  verifyTechnicianField: (
+    technicianId: string,
+    field: 'phoneVerified' | 'nidVerified' | 'skillVerified' | 'platformVerified',
+    value: boolean
+  ) => void;
   registerNewTechnician: (user: User, preferredTechId?: string | null) => Technician;
   updateTechnicianProfile: (technicianId: string, profileData: Partial<Technician>) => void;
   deleteTechnician: (technicianId: string) => void;
@@ -69,6 +101,36 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+const DUMMY_TECH_IDS = new Set(['tech-1', 'tech-2', 'tech-3', 'tech-4', 'tech-5', 'tech-6']);
+const DUMMY_BOOKING_IDS = new Set([
+  'book-1',
+  'book-2',
+  'book-3',
+  'book-4',
+  'book-5',
+  'book-6',
+  'book-7',
+  'book-8',
+  'book-9',
+]);
+
+const isDummyTechnician = (t: Partial<Technician>) =>
+  DUMMY_TECH_IDS.has(t.id || '') ||
+  (t.email || '').toLowerCase().includes('@servexa.demo') ||
+  (t.userId || '').includes('demo');
+
+const isDummyBooking = (b: Partial<Booking>) =>
+  DUMMY_BOOKING_IDS.has(b.id || '') ||
+  (b.id || '').startsWith('demo-') ||
+  b.customerId === 'user-cust-demo' ||
+  DUMMY_TECH_IDS.has(b.technicianId || '');
+
+const isDummyNotification = (n: Partial<NotificationItem>) =>
+  /^notif-[1-9]$/.test(n.id || '') ||
+  n.userId === 'user-cust-demo' ||
+  n.userId === 'user-admin-demo' ||
+  DUMMY_TECH_IDS.has(n.userId || '');
 
 const toServexaId = (val?: string): string => {
   if (!val) return '';
@@ -88,131 +150,99 @@ const toServexaWarrantyId = (id: string): string => {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
 
-  // Load or initialize state with localStorage persistence
   const [categories, setCategories] = useState<ServiceCategory[]>(() => {
     const saved = localStorage.getItem('kormigo_categories');
-    return saved ? JSON.parse(saved) : initialCategories;
+    if (!saved) return initialCategories;
+    try {
+      const parsed: ServiceCategory[] = JSON.parse(saved);
+      return parsed.map((c) => ({ ...c, activeProfessionals: 0 }));
+    } catch {
+      return initialCategories;
+    }
   });
 
   const [technicians, setTechnicians] = useState<Technician[]>(() => {
-    const withDefaultGeo = initialTechnicians.map(initTech => ({
-      ...initTech,
-      division: initTech.division || 'Dhaka',
-      district: initTech.district || initTech.city || 'Dhaka'
-    }));
     const saved = localStorage.getItem('kormigo_technicians');
-    if (!saved) return withDefaultGeo;
+    if (!saved) return [];
     try {
       const parsed: Technician[] = JSON.parse(saved);
-      const seedIds = new Set(withDefaultGeo.map(t => t.id));
-      const customTechnicians = parsed.filter(p => !seedIds.has(p.id));
-      const mergedSeeds = withDefaultGeo.map(initTech => {
-        const found = parsed.find(p => p.id === initTech.id);
-        if (!found) return initTech;
-        return {
-          ...initTech,
-          ...found,
-          division: found.division || initTech.division,
-          district: found.district || initTech.district,
-          latitude: found.latitude ?? initTech.latitude,
-          longitude: found.longitude ?? initTech.longitude,
-          emergencyAvailable: found.emergencyAvailable ?? initTech.emergencyAvailable,
-          serviceRadiusKm: found.serviceRadiusKm ?? initTech.serviceRadiusKm
-        };
-      });
-      return [...customTechnicians, ...mergedSeeds];
+      return parsed.filter((t) => !isDummyTechnician(t));
     } catch {
-      return withDefaultGeo;
+      return [];
     }
   });
 
   const [bookings, setBookings] = useState<Booking[]>(() => {
     const saved = localStorage.getItem('kormigo_bookings');
-    if (!saved) return initialBookings;
+    if (!saved) return [];
     try {
       const parsed: Booking[] = JSON.parse(saved);
-      return parsed.map(b => ({
-        ...b,
-        bookingNumber: toServexaId(b.bookingNumber),
-        invoice: b.invoice ? { ...b.invoice, bookingNumber: toServexaId(b.invoice.bookingNumber) } : undefined
-      }));
+      return parsed
+        .filter((b) => !isDummyBooking(b))
+        .map((b) => ({
+          ...b,
+          bookingNumber: toServexaId(b.bookingNumber),
+          invoice: b.invoice
+            ? { ...b.invoice, bookingNumber: toServexaId(b.invoice.bookingNumber) }
+            : undefined,
+        }));
     } catch {
-      return initialBookings;
+      return [];
     }
   });
 
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
     const saved = localStorage.getItem('kormigo_notifications');
-    if (!saved) return initialNotifications;
+    if (!saved) return [];
     try {
       const parsed: NotificationItem[] = JSON.parse(saved);
-      return parsed.map(n => ({
-        ...n,
-        titleEn: toServexaId(n.titleEn),
-        titleBn: toServexaId(n.titleBn),
-        messageEn: toServexaId(n.messageEn),
-        messageBn: toServexaId(n.messageBn)
-      }));
+      return parsed
+        .filter((n) => !isDummyNotification(n))
+        .map((n) => ({
+          ...n,
+          titleEn: toServexaId(n.titleEn),
+          titleBn: toServexaId(n.titleBn),
+          messageEn: toServexaId(n.messageEn),
+          messageBn: toServexaId(n.messageBn),
+        }));
     } catch {
-      return initialNotifications;
+      return [];
     }
   });
 
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('kormigo_favorites');
-    return saved ? JSON.parse(saved) : ['tech-1', 'tech-3'];
+    if (!saved) return [];
+    try {
+      const parsed: string[] = JSON.parse(saved);
+      return parsed.filter((id) => !DUMMY_TECH_IDS.has(id));
+    } catch {
+      return [];
+    }
   });
 
   const [comparedTechIds, setComparedTechIds] = useState<string[]>([]);
 
   const [reviews, setReviews] = useState<Review[]>(() => {
     const saved = localStorage.getItem('kormigo_reviews');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'rev-1',
-        bookingId: 'book-2',
-        customerId: 'user-cust-demo',
-        customerName: 'সাকিব আল হাসান',
-        customerAvatar: '/src/assets/images/tech_portrait_senior_1794936426060.jpg',
-        technicianId: 'tech-2',
-        overallRating: 5,
-        workQuality: 5,
-        behavior: 5,
-        punctuality: 5,
-        priceFairness: 4,
-        comment: 'অসাধারণ দ্রুত কাজ করেছেন। কোনো বাড়তি কথা নেই, লিকেজ সাথে সাথে বন্ধ করে দিয়েছেন। পরিচ্ছন্ন কাজ।',
-        serviceName: 'প্লাম্বিং ও পাইপ সার্ভিস',
-        createdAt: '2026-09-20'
-      }
-    ];
+    if (!saved) return [];
+    try {
+      const parsed: Review[] = JSON.parse(saved);
+      return parsed.filter((r) => !/^rev-[1-9]$/.test(r.id) && !DUMMY_TECH_IDS.has(r.technicianId));
+    } catch {
+      return [];
+    }
   });
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem('kormigo_chat');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'msg-1',
-        bookingId: 'book-1',
-        senderId: 'tech-1',
-        senderRole: 'TECHNICIAN',
-        senderName: 'রহিম আহমেদ',
-        message: 'আসসালামু আলাইকুম স্যার। আমি আপনার বাড়ির দিকে রওনা দিয়েছি। আনুমানিক ২০-২৫ মিনিট লাগবে।',
-        timestamp: '2026-09-28T11:05:00Z',
-        isRead: true
-      },
-      {
-        id: 'msg-2',
-        bookingId: 'book-1',
-        senderId: 'user-cust-demo',
-        senderRole: 'CUSTOMER',
-        senderName: 'সাকিব আল হাসান',
-        message: 'ঠিক আছে ভাই। গেটে এসে ফোন দিয়েন, আমি ৩য় তলার ফ্ল্যাট খুলে দেব।',
-        timestamp: '2026-09-28T11:08:00Z',
-        isRead: true
-      }
-    ];
+    if (!saved) return [];
+    try {
+      const parsed: ChatMessage[] = JSON.parse(saved);
+      return parsed.filter((m) => !/^msg-[1-9]$/.test(m.id) && !DUMMY_BOOKING_IDS.has(m.bookingId));
+    } catch {
+      return [];
+    }
   });
 
   const [warranties, setWarranties] = useState<WarrantyClaim[]>(() => {
@@ -220,11 +250,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!saved) return [];
     try {
       const parsed: WarrantyClaim[] = JSON.parse(saved);
-      return parsed.map(w => ({
-        ...w,
-        id: toServexaWarrantyId(w.id),
-        bookingNumber: toServexaId(w.bookingNumber)
-      }));
+      return parsed
+        .filter((w) => !/^war-[1-9]$/.test(w.id) && w.customerId !== 'user-cust-demo')
+        .map((w) => ({
+          ...w,
+          id: toServexaWarrantyId(w.id),
+          bookingNumber: toServexaId(w.bookingNumber),
+        }));
     } catch {
       return [];
     }
@@ -232,39 +264,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [reports, setReports] = useState<ReportItem[]>(() => {
     const saved = localStorage.getItem('kormigo_reports');
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    try {
+      const parsed: ReportItem[] = JSON.parse(saved);
+      return parsed.filter((r) => !DUMMY_BOOKING_IDS.has(r.bookingId));
+    } catch {
+      return [];
+    }
   });
 
   const [maintenanceReminders, setMaintenanceReminders] = useState<MaintenanceReminder[]>(() => {
     const saved = localStorage.getItem('kormigo_reminders');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'rem-1',
-        customerId: 'user-cust-demo',
-        categoryId: 'ac_repair',
-        titleEn: 'AC Master Jet Servicing',
-        titleBn: 'এসি মাস্টার জেট ওয়াশ সার্ভিসিং',
-        frequencyMonths: 6,
-        lastServiceDate: '2026-04-15',
-        nextDueDate: '2026-10-15',
-        active: true
-      },
-      {
-        id: 'rem-2',
-        customerId: 'user-cust-demo',
-        categoryId: 'appliance_repair',
-        titleEn: 'Water Purifier Filter Cartridge',
-        titleBn: 'পানি ফিল্টার কার্টিজ পরিবর্তন',
-        frequencyMonths: 3,
-        lastServiceDate: '2026-07-01',
-        nextDueDate: '2026-10-01',
-        active: true
-      }
-    ];
+    if (!saved) return [];
+    try {
+      const parsed: MaintenanceReminder[] = JSON.parse(saved);
+      return parsed.filter(
+        (r) => !/^rem-[1-9]$/.test(r.id) && r.customerId !== 'user-cust-demo'
+      );
+    } catch {
+      return [];
+    }
   });
 
-  // Sync state to localStorage
+  // Persist clean state to localStorage
   useEffect(() => {
     localStorage.setItem('kormigo_categories', JSON.stringify(categories));
   }, [categories]);
@@ -296,21 +318,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('kormigo_reminders', JSON.stringify(maintenanceReminders));
   }, [maintenanceReminders]);
 
+  // Real-time Firebase Firestore subscriptions across all core collections
+  useEffect(() => {
+    void initializeFirestoreDatabase();
+
+    const unsubBookings = subscribeToFirestoreBookings((remoteBookings) => {
+      setBookings(remoteBookings.filter((b) => !isDummyBooking(b)));
+    });
+
+    const unsubTechs = subscribeToFirestoreTechnicians((remoteTechs) => {
+      const clean = remoteTechs.filter((t) => !isDummyTechnician(t));
+      setTechnicians(clean);
+    });
+
+    const unsubReviews = subscribeToFirestoreReviews((remoteReviews) => {
+      setReviews(remoteReviews);
+    });
+
+    const unsubWarranties = subscribeToFirestoreWarranties((remoteClaims) => {
+      setWarranties(remoteClaims);
+    });
+
+    const unsubNotifications = subscribeToFirestoreNotifications((remoteNotifs) => {
+      setNotifications(remoteNotifs.filter((n) => !isDummyNotification(n)));
+    });
+
+    const unsubReports = subscribeToFirestoreReports((remoteReports) => {
+      setReports(remoteReports);
+    });
+
+    const unsubReminders = subscribeToFirestoreReminders((remoteReminders) => {
+      setMaintenanceReminders(remoteReminders);
+    });
+
+    const unsubChats = subscribeToFirestoreChatMessages((remoteChats) => {
+      setChatMessages(remoteChats);
+    });
+
+    return () => {
+      unsubBookings();
+      unsubTechs();
+      unsubReviews();
+      unsubWarranties();
+      unsubNotifications();
+      unsubReports();
+      unsubReminders();
+      unsubChats();
+    };
+  }, []);
+
   const createBooking = (input: Partial<Booking>): Booking => {
-    const bookingNumber = input.bookingNumber || `SRV-2026-${String(Math.floor(100000 + Math.random() * 900000)).slice(0, 6)}`;
-    const areaVal = input.customerArea || currentUser?.area || 'Mirpur';
-    const districtVal = input.customerDistrict || input.customerCity || currentUser?.district || currentUser?.city || 'Dhaka';
-    const addressVal = input.customerAddress || currentUser?.address || 'House 1, Road 2';
+    const bookingNumber =
+      input.bookingNumber ||
+      `SRV-2026-${String(Math.floor(100000 + Math.random() * 900000)).slice(0, 6)}`;
+    const areaVal = input.customerArea || currentUser?.area || 'Dhaka';
+    const districtVal =
+      input.customerDistrict || input.customerCity || currentUser?.district || currentUser?.city || 'Dhaka';
+    const addressVal = input.customerAddress || currentUser?.address || '';
     const resolvedCoords = resolveCustomerCoordinates(areaVal, addressVal, bookingNumber, districtVal);
-    const estVisit = input.estimatedVisitingFee ?? 200;
-    const estLabMin = input.estimatedLabourMin ?? 300;
-    const estLabMax = input.estimatedLabourMax ?? 600;
+    const estVisit = input.estimatedVisitingFee ?? 0;
+    const estLabMin = input.estimatedLabourMin ?? 0;
+    const estLabMax = input.estimatedLabourMax ?? 0;
+
     const newBooking: Booking = {
       id: input.id || `book-${Date.now()}`,
       bookingNumber,
-      customerId: input.customerId || currentUser?.id || 'guest',
-      customerName: input.customerName || currentUser?.name || 'Customer',
-      customerPhone: input.customerPhone || currentUser?.phone || '01700-000000',
+      customerId: input.customerId || currentUser?.id || '',
+      customerName: input.customerName || currentUser?.name || '',
+      customerPhone: input.customerPhone || currentUser?.phone || '',
       customerDivision: input.customerDivision || currentUser?.division || 'Dhaka',
       customerDistrict: districtVal,
       customerCity: districtVal,
@@ -318,13 +393,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customerAddress: addressVal,
       customerLat: input.customerLat ?? resolvedCoords.lat,
       customerLng: input.customerLng ?? resolvedCoords.lng,
-      technicianId: input.technicianId || 'tech-1',
-      technicianName: input.technicianName || 'রহিম আহমেদ',
-      technicianPhone: input.technicianPhone || '01712-345678',
-      technicianAvatar: input.technicianAvatar || '/src/assets/images/tech_portrait_specialist_1794936426858.jpg',
+      technicianId: input.technicianId || '',
+      technicianName: input.technicianName || '',
+      technicianPhone: input.technicianPhone || '',
+      technicianAvatar: input.technicianAvatar || '',
       categoryId: input.categoryId || 'electrical',
-      serviceNameEn: input.serviceNameEn || 'Electrical Service',
-      serviceNameBn: input.serviceNameBn || 'বৈদ্যুতিক সার্ভিস',
+      serviceNameEn: input.serviceNameEn || 'Home Service',
+      serviceNameBn: input.serviceNameBn || 'হোম সার্ভিস',
       problemDescription: input.problemDescription || '',
       mediaUrls: input.mediaUrls || [],
       date: input.date || new Date().toISOString().split('T')[0],
@@ -333,8 +408,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       estimatedVisitingFee: estVisit,
       estimatedLabourMin: estLabMin,
       estimatedLabourMax: estLabMax,
-      estimatedTotalMin: input.estimatedTotalMin ?? (estVisit + estLabMin),
-      estimatedTotalMax: input.estimatedTotalMax ?? (estVisit + estLabMax),
+      estimatedTotalMin: input.estimatedTotalMin ?? estVisit + estLabMin,
+      estimatedTotalMax: input.estimatedTotalMax ?? estVisit + estLabMax,
       finalTotal: input.finalTotal,
       status: input.status || 'REQUESTED',
       statusHistory: input.statusHistory || [
@@ -342,48 +417,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'REQUESTED',
           timestamp: new Date().toISOString(),
           noteEn: 'Booking requested by customer.',
-          noteBn: 'গ্রাহক বুকিং আবেদন সম্পন্ন করেছেন।'
-        }
+          noteBn: 'গ্রাহক বুকিং আবেদন সম্পন্ন করেছেন।',
+        },
       ],
       paymentStatus: input.paymentStatus || 'PENDING',
       paymentMethod: input.paymentMethod || 'cash',
       warrantyDays: input.warrantyDays || 14,
       createdAt: input.createdAt || new Date().toISOString(),
-      updatedAt: input.updatedAt || new Date().toISOString()
+      updatedAt: input.updatedAt || new Date().toISOString(),
     };
 
-    setBookings(prev => [newBooking, ...prev]);
+    setBookings((prev) => [newBooking, ...prev]);
 
-    // Send notifications to both customer and technician
-    const customerNotif: NotificationItem = {
-      id: `notif-${Date.now()}-c`,
-      userId: newBooking.customerId,
-      role: 'CUSTOMER',
-      titleEn: 'Booking Confirmed!',
-      titleBn: 'বুকিং আবেদন সফল হয়েছে!',
-      messageEn: `Your booking ${newBooking.bookingNumber} for ${newBooking.serviceNameEn} is placed.`,
-      messageBn: `আপনার ${newBooking.serviceNameBn} বুকিং (${newBooking.bookingNumber}) সফলভাবে গৃহীত হয়েছে।`,
+    const newNotifs: NotificationItem[] = [];
+    if (newBooking.customerId) {
+      newNotifs.push({
+        id: `notif-${Date.now()}-c`,
+        userId: newBooking.customerId,
+        role: 'CUSTOMER',
+        titleEn: 'Booking Confirmed!',
+        titleBn: 'বুকিং আবেদন সফল হয়েছে!',
+        messageEn: `Your booking ${newBooking.bookingNumber} for ${newBooking.serviceNameEn} is placed.`,
+        messageBn: `আপনার ${newBooking.serviceNameBn} বুকিং (${newBooking.bookingNumber}) সফলভাবে গৃহীত হয়েছে।`,
+        type: 'booking',
+        link: `/booking/${newBooking.id}`,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    if (newBooking.technicianId) {
+      newNotifs.push({
+        id: `notif-${Date.now()}-t`,
+        userId: newBooking.technicianId,
+        role: 'TECHNICIAN',
+        titleEn: 'New Job Request Received!',
+        titleBn: 'নতুন কাজের রিকোয়েস্ট এসেছে!',
+        messageEn: `Booking ${newBooking.bookingNumber} in ${newBooking.customerArea}.`,
+        messageBn: `${newBooking.customerArea}-তে নতুন কাজের আবেদন (${newBooking.bookingNumber})।`,
+        type: 'booking',
+        link: `/technician/jobs`,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    newNotifs.push({
+      id: `notif-${Date.now()}-a`,
+      userId: 'ADMIN_BROADCAST',
+      role: 'ADMIN',
+      titleEn: `New Booking ${newBooking.bookingNumber}`,
+      titleBn: `নতুন বুকিং: ${newBooking.bookingNumber}`,
+      messageEn: `${newBooking.customerName} booked ${newBooking.technicianName} (${newBooking.serviceNameEn}).`,
+      messageBn: `${newBooking.customerName} ${newBooking.technicianName}-কে ${newBooking.serviceNameBn} কাজের জন্য বুক করেছেন।`,
       type: 'booking',
-      link: `/booking/${newBooking.id}`,
+      link: `/admin/dashboard`,
       isRead: false,
-      createdAt: new Date().toISOString()
-    };
+      createdAt: new Date().toISOString(),
+    });
 
-    const techNotif: NotificationItem = {
-      id: `notif-${Date.now()}-t`,
-      userId: newBooking.technicianId,
-      role: 'TECHNICIAN',
-      titleEn: 'New Job Request Received!',
-      titleBn: 'নতুন কাজের রিকোয়েস্ট এসেছে!',
-      messageEn: `Booking ${newBooking.bookingNumber} in ${newBooking.customerArea}.`,
-      messageBn: `${newBooking.customerArea}-তে নতুন কাজের আবেদন (${newBooking.bookingNumber})।`,
-      type: 'booking',
-      link: `/technician/jobs`,
-      isRead: false,
-      createdAt: new Date().toISOString()
-    };
-
-    setNotifications(prev => [customerNotif, techNotif, ...prev]);
+    setNotifications((prev) => [...newNotifs, ...prev]);
+    newNotifs.forEach((n) => void saveNotificationToFirestore(n));
+    void saveBookingToFirestore(newBooking);
 
     return newBooking;
   };
@@ -394,27 +489,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     noteEn?: string,
     noteBn?: string
   ) => {
-    setBookings(prev =>
-      prev.map(b => {
-        if (b.id !== bookingId) return b;
-        const historyItem = {
-          status,
-          timestamp: new Date().toISOString(),
-          noteEn: noteEn || `Status updated to ${status}`,
-          noteBn: noteBn || `স্ট্যাটাস পরিবর্তন: ${status}`
-        };
-        return {
-          ...b,
-          status,
-          statusHistory: [...b.statusHistory, historyItem],
-          updatedAt: new Date().toISOString()
-        };
-      })
+    const targetBooking = bookings.find((b) => b.id === bookingId);
+    const historyItem = {
+      status,
+      timestamp: new Date().toISOString(),
+      noteEn: noteEn || `Status updated to ${status}`,
+      noteBn: noteBn || `স্ট্যাটাস পরিবর্তন: ${status}`,
+    };
+    const nextHistory = targetBooking ? [...targetBooking.statusHistory, historyItem] : [historyItem];
+    const updatedAt = new Date().toISOString();
+
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id !== bookingId
+          ? b
+          : {
+              ...b,
+              status,
+              statusHistory: [...b.statusHistory, historyItem],
+              updatedAt,
+            }
+      )
     );
 
-    // Notify customer
-    const targetBooking = bookings.find(b => b.id === bookingId);
-    if (targetBooking) {
+    void updateBookingInFirestore(bookingId, {
+      status,
+      statusHistory: nextHistory,
+      updatedAt,
+    });
+
+    if (targetBooking?.customerId) {
       const notif: NotificationItem = {
         id: `notif-${Date.now()}`,
         userId: targetBooking.customerId,
@@ -426,9 +530,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'booking',
         link: `/booking/${bookingId}`,
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
-      setNotifications(prev => [notif, ...prev]);
+      setNotifications((prev) => [notif, ...prev]);
+      void saveNotificationToFirestore(notif);
     }
 
     if (getStoredAuthToken()) {
@@ -437,11 +542,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const generateInvoice = (bookingId: string, invoiceData: Partial<Invoice>) => {
-    const booking = bookings.find(b => b.id === bookingId);
+    const booking = bookings.find((b) => b.id === bookingId);
     if (!booking) return;
 
     const visitingFee = invoiceData.visitingFee ?? booking.estimatedVisitingFee;
-    const labourCost = invoiceData.labourCost ?? 400;
+    const labourCost = invoiceData.labourCost ?? 0;
     const partsCost = invoiceData.partsCost ?? 0;
     const discount = invoiceData.discount ?? 0;
     const subtotal = visitingFee + labourCost + partsCost;
@@ -466,34 +571,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       total,
       paymentMethod: invoiceData.paymentMethod || 'cash',
       paymentStatus: invoiceData.paymentStatus || 'PAID',
-      paidAt: new Date().toISOString()
+      paidAt: new Date().toISOString(),
     };
 
-    setBookings(prev =>
-      prev.map(b => (b.id === bookingId ? { ...b, invoice, finalTotal: total, paymentStatus: invoice.paymentStatus, status: 'COMPLETED' } : b))
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              invoice,
+              finalTotal: total,
+              paymentStatus: invoice.paymentStatus,
+              status: 'COMPLETED',
+            }
+          : b
+      )
     );
+
+    void updateBookingInFirestore(bookingId, {
+      invoice,
+      finalTotal: total,
+      paymentStatus: invoice.paymentStatus,
+      status: 'COMPLETED',
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const submitReview = (reviewInput: Omit<Review, 'id' | 'createdAt'>) => {
     const newReview: Review = {
       ...reviewInput,
       id: `rev-${Date.now()}`,
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString().split('T')[0],
     };
-    setReviews(prev => [newReview, ...prev]);
+    setReviews((prev) => [newReview, ...prev]);
+    void saveReviewToFirestore(newReview);
 
-    // Mark booking as reviewed
-    setBookings(prev =>
-      prev.map(b => (b.id === reviewInput.bookingId ? { ...b, reviewed: true } : b))
+    setBookings((prev) =>
+      prev.map((b) => (b.id === reviewInput.bookingId ? { ...b, reviewed: true } : b))
     );
+    void updateBookingInFirestore(reviewInput.bookingId, { reviewed: true });
 
-    // Recalculate technician rating & completed jobs
-    setTechnicians(prev =>
-      prev.map(t => {
+    setTechnicians((prev) =>
+      prev.map((t) => {
         if (t.id !== reviewInput.technicianId) return t;
         const currentCount = t.reviewCount;
-        const newRating = Number(((t.rating * currentCount + reviewInput.overallRating) / (currentCount + 1)).toFixed(1));
-        return {
+        const newRating = Number(
+          ((t.rating * currentCount + reviewInput.overallRating) / (currentCount + 1)).toFixed(1)
+        );
+        const updatedTech: Technician = {
           ...t,
           rating: newRating,
           reviewCount: currentCount + 1,
@@ -501,31 +626,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           healthScore: {
             ...t.healthScore,
             reviewScore: newRating,
-            completedJobs: t.completedJobs + 1
-          }
+            completedJobs: t.completedJobs + 1,
+          },
         };
+        void saveTechnicianToFirestore(updatedTech);
+        return updatedTech;
       })
     );
 
-    const reviewNotif: NotificationItem = {
-      id: `notif-rev-${Date.now()}`,
-      userId: reviewInput.technicianId,
-      role: 'TECHNICIAN',
-      titleEn: `New ${reviewInput.overallRating}★ Customer Feedback!`,
-      titleBn: `⭐ নতুন গ্রাহক ফিডব্যাক (${reviewInput.overallRating}★)!`,
-      messageEn: `${reviewInput.customerName} left feedback for ${reviewInput.serviceName}: "${reviewInput.comment.slice(0, 60)}"`,
-      messageBn: `${reviewInput.customerName} আপনার "${reviewInput.serviceName}" কাজের ওপর ${reviewInput.overallRating}★ ফিডব্যাক দিয়েছেন।`,
-      type: 'system',
-      link: '/technician/dashboard',
-      isRead: false,
-      createdAt: new Date().toISOString()
-    };
-    setNotifications(prev => [reviewNotif, ...prev]);
+    if (reviewInput.technicianId) {
+      const reviewNotif: NotificationItem = {
+        id: `notif-rev-${Date.now()}`,
+        userId: reviewInput.technicianId,
+        role: 'TECHNICIAN',
+        titleEn: `New ${reviewInput.overallRating}★ Customer Feedback!`,
+        titleBn: `⭐ নতুন গ্রাহক ফিডব্যাক (${reviewInput.overallRating}★)!`,
+        messageEn: `${reviewInput.customerName} left feedback for ${reviewInput.serviceName}: "${reviewInput.comment.slice(0, 60)}"`,
+        messageBn: `${reviewInput.customerName} আপনার "${reviewInput.serviceName}" কাজের ওপর ${reviewInput.overallRating}★ ফিডব্যাক দিয়েছেন।`,
+        type: 'system',
+        link: '/technician/dashboard',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      };
+      setNotifications((prev) => [reviewNotif, ...prev]);
+      void saveNotificationToFirestore(reviewNotif);
+    }
   };
 
   const toggleFavorite = (technicianId: string) => {
-    setFavorites(prev =>
-      prev.includes(technicianId) ? prev.filter(id => id !== technicianId) : [...prev, technicianId]
+    setFavorites((prev) =>
+      prev.includes(technicianId) ? prev.filter((id) => id !== technicianId) : [...prev, technicianId]
     );
   };
 
@@ -534,12 +664,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addToCompare = (technicianId: string) => {
     if (comparedTechIds.includes(technicianId)) return true;
     if (comparedTechIds.length >= 3) return false;
-    setComparedTechIds(prev => [...prev, technicianId]);
+    setComparedTechIds((prev) => [...prev, technicianId]);
     return true;
   };
 
   const removeFromCompare = (technicianId: string) => {
-    setComparedTechIds(prev => prev.filter(id => id !== technicianId));
+    setComparedTechIds((prev) => prev.filter((id) => id !== technicianId));
   };
 
   const clearCompare = () => {
@@ -552,16 +682,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     attachmentUrl?: string,
     senderRoleOverride?: 'CUSTOMER' | 'TECHNICIAN'
   ) => {
-    const booking = bookings.find(b => b.id === bookingId);
-    const activeRole = senderRoleOverride || (currentUser?.role === 'TECHNICIAN' ? 'TECHNICIAN' : 'CUSTOMER');
+    const booking = bookings.find((b) => b.id === bookingId);
+    const activeRole =
+      senderRoleOverride || (currentUser?.role === 'TECHNICIAN' ? 'TECHNICIAN' : 'CUSTOMER');
 
     const isCustomer = activeRole === 'CUSTOMER';
     const senderId = isCustomer
-      ? (currentUser?.role === 'CUSTOMER' ? currentUser.id : booking?.customerId || 'cust-1')
-      : (currentUser?.role === 'TECHNICIAN' ? currentUser.id : booking?.technicianId || 'tech-1');
+      ? currentUser?.role === 'CUSTOMER'
+        ? currentUser.id
+        : booking?.customerId || ''
+      : currentUser?.role === 'TECHNICIAN'
+      ? currentUser.id
+      : booking?.technicianId || '';
     const senderName = isCustomer
-      ? (currentUser?.role === 'CUSTOMER' ? currentUser.name : booking?.customerName || 'গ্রাহক')
-      : (currentUser?.role === 'TECHNICIAN' ? currentUser.name : booking?.technicianName || 'মিস্ত্রি');
+      ? currentUser?.role === 'CUSTOMER'
+        ? currentUser.name
+        : booking?.customerName || 'গ্রাহক'
+      : currentUser?.role === 'TECHNICIAN'
+      ? currentUser.name
+      : booking?.technicianName || 'টেকনিশিয়ান';
 
     const newMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -572,17 +711,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       message: text,
       attachmentUrl,
       timestamp: new Date().toISOString(),
-      isRead: false
+      isRead: false,
     };
 
-    setChatMessages(prev => [...prev, newMsg]);
+    setChatMessages((prev) => [...prev, newMsg]);
+    void saveChatMessageToFirestore(newMsg);
 
-    // Create a real notification for the other party (NO RANDOM BOT AUTO-REPLY!)
-    if (isCustomer) {
-      // Customer sent message -> Notify Technician
+    if (isCustomer && booking?.technicianId) {
       const techNotif: NotificationItem = {
         id: `notif-chat-${Date.now()}`,
-        userId: booking?.technicianId || 'tech-1',
+        userId: booking.technicianId,
         role: 'TECHNICIAN',
         titleEn: `New message from ${senderName}`,
         titleBn: `${senderName} (গ্রাহক) নতুন মেসেজ দিয়েছেন`,
@@ -591,14 +729,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'message',
         link: `/technician/dashboard`,
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
-      setNotifications(prev => [techNotif, ...prev]);
-    } else {
-      // Technician sent message -> Notify Customer
+      setNotifications((prev) => [techNotif, ...prev]);
+      void saveNotificationToFirestore(techNotif);
+    } else if (!isCustomer && booking?.customerId) {
       const custNotif: NotificationItem = {
         id: `notif-chat-${Date.now()}`,
-        userId: booking?.customerId || 'cust-1',
+        userId: booking.customerId,
         role: 'CUSTOMER',
         titleEn: `New message from ${senderName}`,
         titleBn: `${senderName} (মিস্ত্রি) মেসেজের উত্তর দিয়েছেন`,
@@ -607,20 +745,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'message',
         link: `/booking/${bookingId}`,
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
-      setNotifications(prev => [custNotif, ...prev]);
+      setNotifications((prev) => [custNotif, ...prev]);
+      void saveNotificationToFirestore(custNotif);
     }
   };
 
   const markChatMessagesRead = (bookingId: string, readerRole: 'CUSTOMER' | 'TECHNICIAN') => {
-    setChatMessages(prev =>
-      prev.map(msg => {
+    setChatMessages((prev) =>
+      prev.map((msg) => {
         if (msg.bookingId !== bookingId) return msg;
         if (readerRole === 'CUSTOMER' && msg.senderRole === 'TECHNICIAN' && !msg.isRead) {
+          void markChatMessageReadInFirestore(msg.id);
           return { ...msg, isRead: true };
         }
         if (readerRole === 'TECHNICIAN' && msg.senderRole === 'CUSTOMER' && !msg.isRead) {
+          void markChatMessageReadInFirestore(msg.id);
           return { ...msg, isRead: true };
         }
         return msg;
@@ -630,7 +771,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const getUnreadChatCount = (bookingId?: string, forRole?: 'CUSTOMER' | 'TECHNICIAN') => {
     const roleToCheck = forRole || (currentUser?.role === 'TECHNICIAN' ? 'TECHNICIAN' : 'CUSTOMER');
-    return chatMessages.filter(msg => {
+    return chatMessages.filter((msg) => {
       if (bookingId && msg.bookingId !== bookingId) return false;
       if (roleToCheck === 'TECHNICIAN') {
         return msg.senderRole === 'CUSTOMER' && !msg.isRead;
@@ -641,22 +782,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const markNotificationRead = (notificationId: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === notificationId ? { ...n, isRead: true } : n))
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
     );
+    void markNotificationReadInFirestore(notificationId);
   };
 
   const markAllNotificationsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    setNotifications((prev) =>
+      prev.map((n) => {
+        if (!n.isRead && (!currentUser || n.role === currentUser.role)) {
+          void markNotificationReadInFirestore(n.id);
+          return { ...n, isRead: true };
+        }
+        return n;
+      })
+    );
   };
 
   const submitWarrantyClaim = (claim: Omit<WarrantyClaim, 'id' | 'requestDate' | 'status'>) => {
-    const relatedBooking = bookings.find(b => b.id === claim.bookingId);
-    const targetTechId = claim.technicianId || relatedBooking?.technicianId || 'tech-1';
-    const relatedTech = technicians.find(t => t.id === targetTechId);
+    const relatedBooking = bookings.find((b) => b.id === claim.bookingId);
+    const targetTechId = claim.technicianId || relatedBooking?.technicianId || '';
+    const relatedTech = technicians.find((t) => t.id === targetTechId);
 
-    const areaVal = claim.customerArea || relatedBooking?.customerArea || currentUser?.area || 'Dhanmondi';
-    const addressVal = claim.customerAddress || relatedBooking?.customerAddress || currentUser?.address || 'Dhaka';
+    const areaVal = claim.customerArea || relatedBooking?.customerArea || currentUser?.area || 'Dhaka';
+    const addressVal =
+      claim.customerAddress || relatedBooking?.customerAddress || currentUser?.address || 'Dhaka';
     const resolvedCoords = resolveCustomerCoordinates(areaVal, addressVal, claim.bookingNumber);
 
     const newClaim: WarrantyClaim = {
@@ -664,26 +815,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `SRV-WRN-${String(Math.floor(100000 + Math.random() * 900000))}`,
       bookingNumber: toServexaId(claim.bookingNumber),
       technicianId: targetTechId,
-      technicianName: claim.technicianName || relatedBooking?.technicianName || relatedTech?.name || 'টেকনিশিয়ান',
-      technicianPhone: claim.technicianPhone || relatedBooking?.technicianPhone || relatedTech?.phone || '',
-      customerName: claim.customerName || relatedBooking?.customerName || currentUser?.name || 'গ্রাহক',
-      customerPhone: claim.customerPhone || relatedBooking?.customerPhone || currentUser?.phone || '',
+      technicianName:
+        claim.technicianName || relatedBooking?.technicianName || relatedTech?.name || 'টেকনিশিয়ান',
+      technicianPhone:
+        claim.technicianPhone || relatedBooking?.technicianPhone || relatedTech?.phone || '',
+      customerName:
+        claim.customerName || relatedBooking?.customerName || currentUser?.name || 'গ্রাহক',
+      customerPhone:
+        claim.customerPhone || relatedBooking?.customerPhone || currentUser?.phone || '',
       customerArea: areaVal,
       customerAddress: addressVal,
       customerLat: claim.customerLat ?? relatedBooking?.customerLat ?? resolvedCoords.lat,
       customerLng: claim.customerLng ?? relatedBooking?.customerLng ?? resolvedCoords.lng,
       requestDate: new Date().toISOString().split('T')[0],
-      status: 'REQUESTED'
+      status: 'REQUESTED',
     };
-    setWarranties(prev => [newClaim, ...prev]);
 
-    setBookings(prev =>
-      prev.map(b => (b.id === claim.bookingId ? { ...b, warrantyRequested: true } : b))
+    setWarranties((prev) => [newClaim, ...prev]);
+    void saveWarrantyToFirestore(newClaim);
+
+    setBookings((prev) =>
+      prev.map((b) => (b.id === claim.bookingId ? { ...b, warrantyRequested: true } : b))
     );
+    void updateBookingInFirestore(claim.bookingId, { warrantyRequested: true });
 
     const adminNotif: NotificationItem = {
       id: `notif-war-admin-${Date.now()}`,
-      userId: 'user-admin-demo',
+      userId: 'ADMIN_BROADCAST',
       role: 'ADMIN',
       titleEn: `New Warranty Claim #${newClaim.id}`,
       titleBn: `🛡️ নতুন ওয়ারেন্টি ক্লেইম আবেদন (#${newClaim.id})`,
@@ -692,30 +850,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'warranty',
       link: '/admin/dashboard',
       isRead: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
-    setNotifications(prev => [adminNotif, ...prev]);
+    setNotifications((prev) => [adminNotif, ...prev]);
+    void saveNotificationToFirestore(adminNotif);
   };
 
-  const updateWarrantyStatus = (claimId: string, status: WarrantyClaim['status'], note?: string) => {
-    const targetClaim = warranties.find(w => w.id === claimId);
+  const updateWarrantyStatus = (
+    claimId: string,
+    status: WarrantyClaim['status'],
+    note?: string
+  ) => {
+    const targetClaim = warranties.find((w) => w.id === claimId);
     const today = new Date().toISOString().split('T')[0];
 
-    setWarranties(prev =>
-      prev.map(w => {
+    setWarranties((prev) =>
+      prev.map((w) => {
         if (w.id !== claimId) return w;
         const isAdminAction = status === 'APPROVED' || status === 'REJECTED';
         const isTechAction = status === 'ACCEPTED' || status === 'ON_THE_WAY' || status === 'RESOLVED';
 
-        return {
+        const updated: WarrantyClaim = {
           ...w,
           status,
-          adminNote: isAdminAction ? (note || w.adminNote) : w.adminNote,
-          technicianNote: isTechAction ? (note || w.technicianNote) : w.technicianNote,
+          adminNote: isAdminAction ? note || w.adminNote : w.adminNote,
+          technicianNote: isTechAction ? note || w.technicianNote : w.technicianNote,
           approvedDate: status === 'APPROVED' ? today : w.approvedDate,
           acceptedAt: status === 'ACCEPTED' ? new Date().toISOString() : w.acceptedAt,
-          resolvedDate: status === 'RESOLVED' ? today : w.resolvedDate
+          resolvedDate: status === 'RESOLVED' ? today : w.resolvedDate,
         };
+        void saveWarrantyToFirestore(updated);
+        return updated;
       })
     );
 
@@ -725,34 +890,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const ts = Date.now();
 
     if (status === 'APPROVED') {
-      newNotifications.push({
-        id: `notif-war-tech-${ts}`,
-        userId: targetClaim.technicianId,
-        role: 'TECHNICIAN',
-        titleEn: `Approved Warranty Job #${targetClaim.id}`,
-        titleBn: `🛡️ অনুমোদিত ওয়ারেন্টি ক্লেইম (#${targetClaim.id})`,
-        messageEn: `Admin approved warranty claim #${targetClaim.id} (${targetClaim.bookingNumber}) for ${targetClaim.serviceName} and assigned it to you.`,
-        messageBn: `অ্যাডমিন "${targetClaim.serviceName}"-এর ওয়ারেন্টি ক্লেইম (#${targetClaim.id}) অনুমোদন করে সরাসরি আপনার ড্যাশবোর্ডে পাঠিয়েছেন। অনুগ্রহ করে পিক করুন।`,
-        type: 'warranty',
-        link: '/technician/dashboard',
-        isRead: false,
-        createdAt: new Date().toISOString()
-      });
+      if (targetClaim.technicianId) {
+        newNotifications.push({
+          id: `notif-war-tech-${ts}`,
+          userId: targetClaim.technicianId,
+          role: 'TECHNICIAN',
+          titleEn: `Approved Warranty Job #${targetClaim.id}`,
+          titleBn: `🛡️ অনুমোদিত ওয়ারেন্টি ক্লেইম (#${targetClaim.id})`,
+          messageEn: `Admin approved warranty claim #${targetClaim.id} (${targetClaim.bookingNumber}) for ${targetClaim.serviceName} and assigned it to you.`,
+          messageBn: `অ্যাডমিন "${targetClaim.serviceName}"-এর ওয়ারেন্টি ক্লেইম (#${targetClaim.id}) অনুমোদন করে সরাসরি আপনার ড্যাশবোর্ডে পাঠিয়েছেন। অনুগ্রহ করে পিক করুন।`,
+          type: 'warranty',
+          link: '/technician/dashboard',
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
 
-      newNotifications.push({
-        id: `notif-war-cust-${ts + 1}`,
-        userId: targetClaim.customerId,
-        role: 'CUSTOMER',
-        titleEn: `Warranty Claim Approved`,
-        titleBn: `✅ আপনার ওয়ারেন্টি ক্লেইম অনুমোদিত হয়েছে`,
-        messageEn: `Admin approved claim #${targetClaim.id} (${targetClaim.bookingNumber}) and dispatched it to ${targetClaim.technicianName || 'your technician'}.`,
-        messageBn: `অ্যাডমিন আপনার ওয়ারেন্টি ক্লেইম (#${targetClaim.id}) অনুমোদন করে টেকনিশিয়ান ${targetClaim.technicianName || ''}-এর কাছে পাঠিয়েছেন।`,
-        type: 'warranty',
-        link: '/customer/dashboard',
-        isRead: false,
-        createdAt: new Date().toISOString()
-      });
-    } else if (status === 'REJECTED') {
+      if (targetClaim.customerId) {
+        newNotifications.push({
+          id: `notif-war-cust-${ts + 1}`,
+          userId: targetClaim.customerId,
+          role: 'CUSTOMER',
+          titleEn: `Warranty Claim Approved`,
+          titleBn: `✅ আপনার ওয়ারেন্টি ক্লেইম অনুমোদিত হয়েছে`,
+          messageEn: `Admin approved claim #${targetClaim.id} (${targetClaim.bookingNumber}) and dispatched it to ${targetClaim.technicianName || 'your technician'}.`,
+          messageBn: `অ্যাডমিন আপনার ওয়ারেন্টি ক্লেইম (#${targetClaim.id}) অনুমোদন করে টেকনিশিয়ান ${targetClaim.technicianName || ''}-এর কাছে পাঠিয়েছেন।`,
+          type: 'warranty',
+          link: '/customer/dashboard',
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    } else if (status === 'REJECTED' && targetClaim.customerId) {
       newNotifications.push({
         id: `notif-war-rej-${ts}`,
         userId: targetClaim.customerId,
@@ -764,9 +933,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'warranty',
         link: '/customer/dashboard',
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       });
-    } else if (status === 'ACCEPTED') {
+    } else if (status === 'ACCEPTED' && targetClaim.customerId) {
       newNotifications.push({
         id: `notif-war-acc-${ts}`,
         userId: targetClaim.customerId,
@@ -778,9 +947,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'warranty',
         link: '/customer/dashboard',
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       });
-    } else if (status === 'ON_THE_WAY') {
+    } else if (status === 'ON_THE_WAY' && targetClaim.customerId) {
       newNotifications.push({
         id: `notif-war-way-${ts}`,
         userId: targetClaim.customerId,
@@ -792,25 +961,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'warranty',
         link: '/customer/dashboard',
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       });
     } else if (status === 'RESOLVED') {
-      newNotifications.push({
-        id: `notif-war-res-c-${ts}`,
-        userId: targetClaim.customerId,
-        role: 'CUSTOMER',
-        titleEn: `Warranty Service Resolved!`,
-        titleBn: `✅ ওয়ারেন্টি সার্ভিস সম্পন্ন হয়েছে!`,
-        messageEn: `Warranty repair #${targetClaim.id} for ${targetClaim.serviceName} is completed. Please share your feedback.`,
-        messageBn: `"${targetClaim.serviceName}"-এর ফ্রি ওয়ারেন্টি সার্ভিস (#${targetClaim.id}) সম্পন্ন হয়েছে। অনুগ্রহ করে আপনার ফিডব্যাক জানান।`,
-        type: 'warranty',
-        link: '/customer/dashboard',
-        isRead: false,
-        createdAt: new Date().toISOString()
-      });
+      if (targetClaim.customerId) {
+        newNotifications.push({
+          id: `notif-war-res-c-${ts}`,
+          userId: targetClaim.customerId,
+          role: 'CUSTOMER',
+          titleEn: `Warranty Service Resolved!`,
+          titleBn: `✅ ওয়ারেন্টি সার্ভিস সম্পন্ন হয়েছে!`,
+          messageEn: `Warranty repair #${targetClaim.id} for ${targetClaim.serviceName} is completed. Please share your feedback.`,
+          messageBn: `"${targetClaim.serviceName}"-এর ফ্রি ওয়ারেন্টি সার্ভিস (#${targetClaim.id}) সম্পন্ন হয়েছে। অনুগ্রহ করে আপনার ফিডব্যাক জানান।`,
+          type: 'warranty',
+          link: '/customer/dashboard',
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
       newNotifications.push({
         id: `notif-war-res-a-${ts + 1}`,
-        userId: 'user-admin-demo',
+        userId: 'ADMIN_BROADCAST',
         role: 'ADMIN',
         titleEn: `Warranty Claim Resolved (#${targetClaim.id})`,
         titleBn: `✔️ ওয়ারেন্টি ক্লেইম সম্পন্ন (#${targetClaim.id})`,
@@ -819,12 +990,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'warranty',
         link: '/admin/dashboard',
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       });
     }
 
     if (newNotifications.length > 0) {
-      setNotifications(prev => [...newNotifications, ...prev]);
+      setNotifications((prev) => [...newNotifications, ...prev]);
+      newNotifications.forEach((n) => void saveNotificationToFirestore(n));
     }
   };
 
@@ -833,18 +1005,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...report,
       id: `rep-${Date.now()}`,
       createdAt: new Date().toISOString(),
-      status: 'OPEN'
+      status: 'OPEN',
     };
-    setReports(prev => [newReport, ...prev]);
+    setReports((prev) => [newReport, ...prev]);
+    void saveReportToFirestore(newReport);
 
-    setBookings(prev =>
-      prev.map(b => (b.id === report.bookingId ? { ...b, status: 'DISPUTED' } : b))
+    setBookings((prev) =>
+      prev.map((b) => (b.id === report.bookingId ? { ...b, status: 'DISPUTED' } : b))
     );
+    void updateBookingInFirestore(report.bookingId, {
+      status: 'DISPUTED',
+      updatedAt: new Date().toISOString(),
+    });
+
+    const adminNotif: NotificationItem = {
+      id: `notif-rep-${Date.now()}`,
+      userId: 'ADMIN_BROADCAST',
+      role: 'ADMIN',
+      titleEn: `New Dispute Report`,
+      titleBn: `⚠️ নতুন রিপোর্ট / অভিযোগ জমা হয়েছে`,
+      messageEn: `${report.reason}: ${(report.description || '').slice(0, 80)}`,
+      messageBn: `${report.reason}: ${(report.description || '').slice(0, 80)}`,
+      type: 'system',
+      link: '/admin/dashboard',
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    };
+    setNotifications((prev) => [adminNotif, ...prev]);
+    void saveNotificationToFirestore(adminNotif);
   };
 
   const resolveReport = (reportId: string, resolution: string) => {
-    setReports(prev =>
-      prev.map(r => (r.id === reportId ? { ...r, status: 'RESOLVED', adminResolution: resolution } : r))
+    setReports((prev) =>
+      prev.map((r) => {
+        if (r.id !== reportId) return r;
+        const updated: ReportItem = { ...r, status: 'RESOLVED', adminResolution: resolution };
+        void saveReportToFirestore(updated);
+        return updated;
+      })
     );
   };
 
@@ -852,31 +1050,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newRem: MaintenanceReminder = {
       ...reminder,
       id: `rem-${Date.now()}`,
-      active: true
+      active: true,
     };
-    setMaintenanceReminders(prev => [newRem, ...prev]);
+    setMaintenanceReminders((prev) => [newRem, ...prev]);
+    void saveMaintenanceReminderToFirestore(newRem);
   };
 
   const deleteMaintenanceReminder = (id: string) => {
-    setMaintenanceReminders(prev => prev.filter(r => r.id !== id));
+    setMaintenanceReminders((prev) => prev.filter((r) => r.id !== id));
+    void deleteMaintenanceReminderFromFirestore(id);
   };
 
-  const updateTechnicianAvailability = (technicianId: string, availability: AvailabilityStatus) => {
-    setTechnicians(prev =>
-      prev.map(t => (t.id === technicianId ? { ...t, availability } : t))
+  const updateTechnicianAvailability = (
+    technicianId: string,
+    availability: AvailabilityStatus
+  ) => {
+    setTechnicians((prev) =>
+      prev.map((t) => {
+        if (t.id !== technicianId) return t;
+        const updated = { ...t, availability };
+        void saveTechnicianToFirestore(updated);
+        void syncTechnicianToServer(updated).catch(() => {});
+        return updated;
+      })
     );
   };
 
   const registerNewTechnician = (user: User, preferredTechId?: string | null): Technician => {
-    const existing = technicians.find(t => t.userId === user.id || (user.email && t.email === user.email));
-    if (existing) return existing;
+    const existing = technicians.find(
+      (t) =>
+        t.userId === user.id ||
+        (user.email && t.email && t.email.toLowerCase() === user.email.toLowerCase())
+    );
+    if (existing) {
+      void syncTechnicianToServer(existing).catch(() => {});
+      return existing;
+    }
 
     const newTech: Technician = {
       id: preferredTechId || `tech-${Date.now()}`,
       userId: user.id,
       name: user.name,
       email: user.email,
-      avatar: user.avatar,
+      avatar: user.avatar || '',
       bioEn: '',
       bioBn: '',
       rating: 5.0,
@@ -886,7 +1102,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       startingPrice: 0,
       visitingFee: 0,
       experienceYears: 0,
-      phone: user.phone,
+      phone: user.phone || '',
       division: '',
       district: '',
       city: '',
@@ -896,7 +1112,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       languages: ['বাংলা'],
       availability: 'offline',
       workingHours: '',
-      phoneVerified: true,
+      phoneVerified: !!user.phone,
       nidVerified: false,
       skillVerified: false,
       platformVerified: false,
@@ -909,31 +1125,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         onTimeRate: 100,
         repeatRate: 100,
         completedJobs: 0,
-        reviewScore: 5.0
+        reviewScore: 5.0,
       },
       portfolio: [],
       aboutEn: '',
       aboutBn: '',
       emergencyAvailable: false,
-      serviceRadiusKm: 10
+      serviceRadiusKm: 10,
     };
 
-    setTechnicians(prev => [newTech, ...prev]);
+    setTechnicians((prev) => [newTech, ...prev]);
+    void saveTechnicianToFirestore(newTech);
+    void syncTechnicianToServer(newTech).catch(() => {});
 
     const adminNotif: NotificationItem = {
       id: `notif-newtech-${Date.now()}`,
-      userId: 'user-admin-demo',
+      userId: 'ADMIN_BROADCAST',
       role: 'ADMIN',
       titleEn: `New Technician Registered: ${user.name}`,
       titleBn: `👷 নতুন টেকনিশিয়ান নিবন্ধন করেছেন: ${user.name}`,
-      messageEn: `${user.name} (${user.phone}) registered as a technician. Review their biodata, NID & skill test in Admin KYC.`,
-      messageBn: `${user.name} (📞 ${user.phone}) নতুন টেকনিশিয়ান হিসেবে সাইন আপ করেছেন। প্রোফাইল, NID ও "দক্ষতা উত্তীর্ণ" যাচাই করতে অ্যাডমিন ড্যাশবোর্ড দেখুন।`,
+      messageEn: `${user.name} (${user.email}) registered as a technician. Review their biodata, NID & skill test in Admin KYC.`,
+      messageBn: `${user.name} (${user.email}) নতুন টেকনিশিয়ান হিসেবে সাইন আপ করেছেন। প্রোফাইল, NID ও "দক্ষতা উত্তীর্ণ" যাচাই করতে অ্যাডমিন ড্যাশবোর্ড দেখুন।`,
       type: 'system',
       link: '/admin/dashboard',
       isRead: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
-    setNotifications(prev => [adminNotif, ...prev]);
+    setNotifications((prev) => [adminNotif, ...prev]);
+    void saveNotificationToFirestore(adminNotif);
 
     return newTech;
   };
@@ -943,16 +1162,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     field: 'phoneVerified' | 'nidVerified' | 'skillVerified' | 'platformVerified',
     value: boolean
   ) => {
-    const targetTech = technicians.find(t => t.id === technicianId);
-    setTechnicians(prev =>
-      prev.map(t => (t.id === technicianId ? { ...t, [field]: value } : t))
+    const targetTech = technicians.find((t) => t.id === technicianId);
+    setTechnicians((prev) =>
+      prev.map((t) => {
+        if (t.id === technicianId) {
+          const updated = { ...t, [field]: value };
+          void saveTechnicianToFirestore(updated);
+          void syncTechnicianToServer(updated).catch(() => {});
+          return updated;
+        }
+        return t;
+      })
     );
 
-    if (targetTech && value && (field === 'skillVerified' || field === 'platformVerified' || field === 'nidVerified')) {
+    if (
+      targetTech &&
+      value &&
+      (field === 'skillVerified' || field === 'platformVerified' || field === 'nidVerified')
+    ) {
       const titleMap = {
         nidVerified: '✅ আপনার NID যাচাই সম্পন্ন হয়েছে',
         skillVerified: '🎉 অভিনন্দন! আপনি "দক্ষতা উত্তীর্ণ" হিসেবে অনুমোদিত',
-        platformVerified: '🛡️ আপনি ভেরিফায়েড প্রো ব্যাজ পেয়েছেন'
+        platformVerified: '🛡️ আপনি ভেরিফায়েড প্রো ব্যাজ পেয়েছেন',
       };
       const techNotif: NotificationItem = {
         id: `notif-kyc-${Date.now()}`,
@@ -968,39 +1199,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'system',
         link: '/technician/dashboard',
         isRead: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
-      setNotifications(prev => [techNotif, ...prev]);
+      setNotifications((prev) => [techNotif, ...prev]);
+      void saveNotificationToFirestore(techNotif);
     }
   };
 
   const updateTechnicianProfile = (technicianId: string, profileData: Partial<Technician>) => {
-    setTechnicians(prev =>
-      prev.map(t => (t.id === technicianId ? { ...t, ...profileData } : t))
+    setTechnicians((prev) =>
+      prev.map((t) => {
+        if (t.id === technicianId) {
+          const updated = { ...t, ...profileData };
+          void saveTechnicianToFirestore(updated);
+          void syncTechnicianToServer(updated).catch(() => {});
+          return updated;
+        }
+        return t;
+      })
     );
   };
 
   const deleteTechnician = (technicianId: string) => {
-    setTechnicians(prev => prev.filter(t => t.id !== technicianId));
+    setTechnicians((prev) => prev.filter((t) => t.id !== technicianId));
+    void deleteTechnicianFromFirestore(technicianId);
   };
 
   const addTechnicianPortfolio = (technicianId: string, item: Omit<PortfolioItem, 'id'>) => {
     const newItem: PortfolioItem = {
       ...item,
-      id: `port-${Date.now()}`
+      id: `port-${Date.now()}`,
     };
-    setTechnicians(prev =>
-      prev.map(t =>
-        t.id === technicianId ? { ...t, portfolio: [newItem, ...(t.portfolio || [])] } : t
-      )
+    setTechnicians((prev) =>
+      prev.map((t) => {
+        if (t.id !== technicianId) return t;
+        const updated = { ...t, portfolio: [newItem, ...(t.portfolio || [])] };
+        void saveTechnicianToFirestore(updated);
+        return updated;
+      })
     );
   };
 
   const deleteTechnicianPortfolio = (technicianId: string, itemId: string) => {
-    setTechnicians(prev =>
-      prev.map(t =>
-        t.id === technicianId ? { ...t, portfolio: (t.portfolio || []).filter(p => p.id !== itemId) } : t
-      )
+    setTechnicians((prev) =>
+      prev.map((t) => {
+        if (t.id !== technicianId) return t;
+        const updated = {
+          ...t,
+          portfolio: (t.portfolio || []).filter((p) => p.id !== itemId),
+        };
+        void saveTechnicianToFirestore(updated);
+        return updated;
+      })
     );
   };
 

@@ -11,7 +11,7 @@ export const translations = {
     nav: {
       services: 'সার্ভিসসমূহ',
       howItWorks: 'কীভাবে কাজ করে',
-      findPros: 'মিস্ত্রি খুঁজুন',
+      findPros: 'প্রফেশনালস',
       emergency: 'জরুরি সেবা',
       becomePro: 'মিস্ত্রি হিসেবে যোগ দিন',
       dashboard: 'ড্যাশবোর্ড',
@@ -62,7 +62,6 @@ export const translations = {
       reportIssue: 'অভিযোগ দায়ের করুন',
       apply: 'আবেদন করুন',
       switchRole: 'রোল পরিবর্তন করুন',
-      quickDemoLogin: 'ডেমো একাউন্টে দ্রুত লগইন',
     },
 
     // Hero Section
@@ -338,7 +337,7 @@ export const translations = {
     nav: {
       services: 'Services',
       howItWorks: 'How It Works',
-      findPros: 'Find Professionals',
+      findPros: 'Professionals',
       emergency: 'Emergency Help',
       becomePro: 'Join as Professional',
       dashboard: 'Dashboard',
@@ -389,7 +388,6 @@ export const translations = {
       reportIssue: 'Report Issue',
       apply: 'Apply',
       switchRole: 'Switch Role',
-      quickDemoLogin: 'Quick Demo Login',
     },
 
     // Hero Section

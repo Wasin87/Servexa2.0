@@ -11,7 +11,6 @@ import {
   Star,
   RotateCcw,
   ArrowRight,
-  Sparkles,
   ZoomIn,
   ZoomOut,
   MapPin
@@ -21,8 +20,6 @@ import { useApp } from '../../contexts/AppContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { DHAKA_HEATMAP_ZONES } from '../../data/heatmapData';
-import { diagnoseWithAI } from '../../services/geminiService';
-import { DiagnosisResult } from '../../services/problemDiagnosis';
 import {
   DHAKA_CENTER,
   calculateHaversineDistance,
@@ -129,10 +126,6 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
   });
   const [zoomLevel, setZoomLevel] = useState<number>(12);
   const [searchedLocationPin, setSearchedLocationPin] = useState<{ lat: number; lng: number; name: string } | null>(null);
-
-  // Gemini AI Smart Diagnostics State
-  const [isDiagnosing, setIsDiagnosing] = useState(false);
-  const [aiDiagnosis, setAiDiagnosis] = useState<DiagnosisResult | null>(null);
   const [, setDetectedCategory] = useState<string | null>(null);
 
   // Sync external selection if prop changes
@@ -214,43 +207,6 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
       setDetectedCategory(null);
     }
   }, [searchQuery]);
-
-  const handleAIDiagnosis = async () => {
-    if (!searchQuery.trim()) {
-      setLocationToast({
-        message: isBangla ? 'প্রথমে আপনার সমস্যাটি লিখে জানান!' : 'Please describe your problem first!',
-        type: 'info'
-      });
-      return;
-    }
-
-    setIsDiagnosing(true);
-    setAiDiagnosis(null);
-    try {
-      const result = await diagnoseWithAI(searchQuery, categories);
-      setAiDiagnosis(result);
-      if (result.categoryId && result.categoryId !== 'other_services') {
-        setSelectedCategory(result.categoryId);
-        const categoryPros = technicians.filter((t) => t.skills.includes(result.categoryId));
-        if (categoryPros.length > 0) {
-          const firstPro = categoryPros[0];
-          setMapCenter({
-            lat: firstPro.latitude || DHAKA_CENTER.lat,
-            lng: firstPro.longitude || DHAKA_CENTER.lng
-          });
-          setZoomLevel(13);
-        }
-      }
-      setLocationToast({
-        message: isBangla ? 'Servexa AI সমস্যা সফলভাবে বিশ্লেষণ করেছে।' : 'Servexa AI successfully analyzed your issue.',
-        type: 'success'
-      });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsDiagnosing(false);
-    }
-  };
 
   const handleLocationOrServiceSearch = (rawQuery?: string) => {
     const raw = rawQuery !== undefined ? rawQuery : searchQuery;
@@ -360,7 +316,10 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
       }
     }
 
-    handleAIDiagnosis();
+    setLocationToast({
+      message: isBangla ? 'সার্চ অনুযায়ী ম্যাপ ফিল্টার করা হয়েছে' : 'Filtered map based on your search',
+      type: 'info'
+    });
   };
 
   const filteredTechnicians = useMemo(() => {
@@ -488,7 +447,6 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
     setSearchQuery('');
     setSortBy('recommended');
     setDetectedCategory(null);
-    setAiDiagnosis(null);
     setSearchedLocationPin(null);
   };
 
@@ -869,18 +827,6 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
               <Search className="w-3.5 h-3.5" />
               <span>{isBangla ? 'সার্চ' : 'Search'}</span>
             </button>
-
-            <button
-              onClick={handleAIDiagnosis}
-              disabled={isDiagnosing}
-              type="button"
-              title={isBangla ? 'সমস্যা বিশ্লেষণ করুন' : 'AI Diagnostic Search'}
-              className="py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-extrabold text-xs flex items-center gap-1 shrink-0 transition-all shadow-md shadow-amber-500/15 cursor-pointer active:scale-95 disabled:opacity-75"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${isDiagnosing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{isBangla ? 'এআই ডায়াগনোসিস' : 'AI Diagnosis'}</span>
-              <span className="sm:hidden">{isBangla ? 'এআই' : 'AI'}</span>
-            </button>
           </div>
 
           {/* Desktop Quick Dropdowns */}
@@ -980,8 +926,7 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
             {(selectedCategory !== 'all' ||
               availabilityFilter !== 'all' ||
               searchQuery ||
-              distanceRadiusKm < 25 ||
-              aiDiagnosis) && (
+              distanceRadiusKm < 25) && (
               <button
                 onClick={handleResetFilters}
                 type="button"
@@ -1218,48 +1163,6 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
                 ? `${activeCluster.count} জন পেশাজীবী এই জোনে সেবায় প্রস্তুত আছেন। ক্লিক করে জুম করুন।`
                 : `${activeCluster.count} verified professionals active in this coverage area. Click to zoom.`}
             </p>
-          </div>
-        )}
-
-        {/* AI DIAGNOSIS FLOATING OVERLAY CARD */}
-        {aiDiagnosis && (
-          <div className="absolute top-4 left-4 z-20 max-w-sm bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-4 rounded-2xl border border-orange-500/40 shadow-2xl animate-in slide-in-from-top-3 duration-200">
-            <div className="flex items-center justify-between gap-2 text-orange-600 dark:text-orange-400 text-xs font-black uppercase tracking-wider mb-1.5">
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 animate-pulse" />
-                <span>Servexa AI Diagnosis</span>
-              </div>
-              <span className="bg-orange-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
-                {aiDiagnosis.confidence}% Match
-              </span>
-            </div>
-            <p className="text-xs text-zinc-800 dark:text-zinc-200 font-bold leading-snug">
-              {isBangla ? aiDiagnosis.reasoningBn : aiDiagnosis.reasoningEn}
-            </p>
-            {aiDiagnosis.keySymptoms && aiDiagnosis.keySymptoms.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {aiDiagnosis.keySymptoms.map((sym, idx) => (
-                  <span
-                    key={idx}
-                    className="bg-orange-500/15 border border-orange-500/25 text-[10px] text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-lg font-bold"
-                  >
-                    🔍 {sym}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-bold mt-2.5 pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-              <span>
-                Urgency: <span className="text-rose-600 uppercase font-black">{aiDiagnosis.recommendedUrgency}</span>
-              </span>
-              <button
-                onClick={() => setAiDiagnosis(null)}
-                type="button"
-                className="text-zinc-400 hover:text-rose-600 underline cursor-pointer"
-              >
-                ✕ Dismiss
-              </button>
-            </div>
           </div>
         )}
 

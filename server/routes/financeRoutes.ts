@@ -33,6 +33,65 @@ import type {
   PricingRule,
 } from '../../src/types/finance';
 
+const ADMIN_EMAIL = 'wasinahmed805@gmail.com';
+
+function ensureTechnicianInSqlite(db: ReturnType<typeof getDb>, technicianId: string, snapshot?: any): boolean {
+  if (!technicianId) return false;
+  const existing = db.prepare('SELECT id FROM technicians WHERE id = ?').get(technicianId);
+  if (existing) return true;
+  if (!snapshot || typeof snapshot !== 'object') return false;
+
+  const now = new Date().toISOString();
+  const userId = String(snapshot.userId || `user-${technicianId}`);
+  const cleanName = String(snapshot.name || 'Technician');
+  const cleanEmail = String(snapshot.email || `${technicianId}@servexa.local`).toLowerCase().trim();
+  const cleanPhone = String(snapshot.phone || '');
+
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, phone, role, avatar, division, district, city, area, phone_verified, nid_verified, created_at)
+    VALUES (?, ?, ?, ?, 'TECHNICIAN', ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    userId,
+    cleanName,
+    cleanEmail,
+    cleanPhone,
+    String(snapshot.avatar || ''),
+    String(snapshot.division || 'Dhaka'),
+    String(snapshot.district || snapshot.city || 'Dhaka'),
+    String(snapshot.city || snapshot.district || 'Dhaka'),
+    String(snapshot.primaryArea || ''),
+    snapshot.phoneVerified ? 1 : 0,
+    snapshot.nidVerified ? 1 : 0,
+    now
+  );
+
+  db.prepare(`
+    INSERT OR IGNORE INTO technicians (
+      id, user_id, name, email, phone, primary_area, city, district, division,
+      avatar, visiting_fee, starting_price, skill_verified, platform_verified, nid_verified, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    technicianId,
+    userId,
+    cleanName,
+    cleanEmail,
+    cleanPhone,
+    String(snapshot.primaryArea || ''),
+    String(snapshot.city || snapshot.district || 'Dhaka'),
+    String(snapshot.district || snapshot.city || 'Dhaka'),
+    String(snapshot.division || 'Dhaka'),
+    String(snapshot.avatar || ''),
+    Number(snapshot.visitingFee || 200),
+    Number(snapshot.startingPrice || 350),
+    snapshot.skillVerified ? 1 : 0,
+    snapshot.platformVerified ? 1 : 0,
+    snapshot.nidVerified ? 1 : 0,
+    now
+  );
+  db.prepare('INSERT OR IGNORE INTO wallets (technician_id, updated_at) VALUES (?, ?)').run(technicianId, now);
+  return true;
+}
+
 export function createFinanceRouter(): express.Router {
   const router = express.Router();
 
@@ -42,48 +101,63 @@ export function createFinanceRouter(): express.Router {
   router.post('/auth/session', (req, res) => {
     try {
       const db = getDb();
-      const { userId, email, role, name, phone, avatar } = req.body || {};
+      const { userId, email, role, name, phone, avatar, preferredTechId } = req.body || {};
       if (!userId && !email) {
         return res.status(400).json({ error: 'userId or email is required.' });
       }
 
+      const emailLower = String(email || '').toLowerCase().trim();
       let userRow: any = null;
       if (userId) {
         userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(String(userId));
       }
-      if (!userRow && email) {
+      if (!userRow && emailLower) {
         userRow = db
           .prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)')
-          .get(String(email).trim());
+          .get(emailLower);
       }
 
       if (!userRow) {
-        // Safely upsert newly registered frontend user into SQLite users table
         const cleanRole = ['CUSTOMER', 'TECHNICIAN', 'ADMIN'].includes(role) ? role : 'CUSTOMER';
-        // Never allow arbitrary self-escalation to ADMIN if email isn't admin@servexa.demo
-        if (cleanRole === 'ADMIN' && String(email || '').toLowerCase() !== 'admin@servexa.demo') {
+        if (cleanRole === 'ADMIN' && emailLower !== ADMIN_EMAIL) {
           return res.status(403).json({ error: 'Cannot create arbitrary ADMIN account via public session endpoint.' });
         }
         const newId = String(userId || uid('user'));
-        const cleanEmail = String(email || `${newId}@servexa.local`).toLowerCase().trim();
+        const cleanEmail = emailLower || `${newId}@servexa.local`;
         const now = new Date().toISOString();
         db.prepare(`
           INSERT OR IGNORE INTO users (id, name, email, phone, role, avatar, phone_verified, nid_verified, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)
-        `).run(newId, String(name || 'User'), cleanEmail, String(phone || '01700-000000'), cleanRole, String(avatar || ''), now);
+          VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+        `).run(newId, String(name || 'User'), cleanEmail, String(phone || ''), cleanRole, String(avatar || ''), phone ? 1 : 0, now);
 
         if (cleanRole === 'TECHNICIAN') {
-          const existingTech = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(newId);
+          const existingTech = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(newId) as { id: string } | undefined;
           if (!existingTech) {
-            const techId = `tech-${Date.now()}`;
+            const techId = preferredTechId ? String(preferredTechId) : `tech-${Date.now()}`;
             db.prepare(`
-              INSERT INTO technicians (id, user_id, name, email, phone, avatar, skill_verified, platform_verified, nid_verified, created_at)
+              INSERT OR IGNORE INTO technicians (id, user_id, name, email, phone, avatar, skill_verified, platform_verified, nid_verified, created_at)
               VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
-            `).run(techId, newId, String(name || 'Technician'), cleanEmail, String(phone || '01700-000000'), String(avatar || ''), now);
+            `).run(techId, newId, String(name || 'Technician'), cleanEmail, String(phone || ''), String(avatar || ''), now);
             db.prepare('INSERT OR IGNORE INTO wallets (technician_id, updated_at) VALUES (?, ?)').run(techId, now);
           }
         }
         userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(newId);
+      } else if (emailLower === ADMIN_EMAIL && userRow.role !== 'ADMIN') {
+        db.prepare("UPDATE users SET role = 'ADMIN' WHERE id = ?").run(userRow.id);
+        userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(userRow.id);
+      }
+
+      if (userRow.role === 'TECHNICIAN' && preferredTechId) {
+        const existingByUser = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(userRow.id) as { id: string } | undefined;
+        if (!existingByUser) {
+          ensureTechnicianInSqlite(db, String(preferredTechId), {
+            userId: userRow.id,
+            name: name || userRow.name,
+            email: emailLower || userRow.email,
+            phone: phone || userRow.phone,
+            avatar: avatar || userRow.avatar,
+          });
+        }
       }
 
       const techRow = db.prepare('SELECT id FROM technicians WHERE user_id = ?').get(userRow.id) as { id: string } | undefined;
@@ -107,6 +181,57 @@ export function createFinanceRouter(): express.Router {
       });
     } catch (err: any) {
       return res.status(500).json({ error: err?.message || 'Failed to establish session.' });
+    }
+  });
+
+  // Sync Firestore technician record into SQLite so pricing quotes & bookings always resolve cleanly
+  router.post('/technicians/sync', (req, res) => {
+    try {
+      const db = getDb();
+      const tech = req.body || {};
+      const techId = String(tech.id || '');
+      if (!techId) {
+        return res.status(400).json({ error: 'Technician id is required.' });
+      }
+      const existing = db.prepare('SELECT id FROM technicians WHERE id = ?').get(techId);
+      if (!existing) {
+        ensureTechnicianInSqlite(db, techId, tech);
+      } else {
+        db.prepare(`
+          UPDATE technicians SET
+            name = COALESCE(?, name),
+            phone = COALESCE(?, phone),
+            primary_area = COALESCE(?, primary_area),
+            city = COALESCE(?, city),
+            district = COALESCE(?, district),
+            division = COALESCE(?, division),
+            avatar = COALESCE(?, avatar),
+            visiting_fee = COALESCE(?, visiting_fee),
+            starting_price = COALESCE(?, starting_price),
+            skill_verified = COALESCE(?, skill_verified),
+            platform_verified = COALESCE(?, platform_verified),
+            nid_verified = COALESCE(?, nid_verified)
+          WHERE id = ?
+        `).run(
+          tech.name ?? null,
+          tech.phone ?? null,
+          tech.primaryArea ?? null,
+          tech.city ?? null,
+          tech.district ?? null,
+          tech.division ?? null,
+          tech.avatar ?? null,
+          tech.visitingFee != null ? Number(tech.visitingFee) : null,
+          tech.startingPrice != null ? Number(tech.startingPrice) : null,
+          tech.skillVerified != null ? (tech.skillVerified ? 1 : 0) : null,
+          tech.platformVerified != null ? (tech.platformVerified ? 1 : 0) : null,
+          tech.nidVerified != null ? (tech.nidVerified ? 1 : 0) : null,
+          techId
+        );
+        db.prepare('INSERT OR IGNORE INTO wallets (technician_id, updated_at) VALUES (?, ?)').run(techId, new Date().toISOString());
+      }
+      return res.json({ success: true, technicianId: techId });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Failed to sync technician.' });
     }
   });
 
@@ -1114,6 +1239,9 @@ export function createFinanceRouter(): express.Router {
   router.post('/pricing/quote', (req, res) => {
     try {
       const db = getDb();
+      if (req.body?.technicianId) {
+        ensureTechnicianInSqlite(db, String(req.body.technicianId), req.body?.technicianSnapshot);
+      }
       const quote = computePriceBreakdownFromServer(db, req.body || {});
       return res.json({ quote });
     } catch (err: any) {
@@ -1204,6 +1332,11 @@ export function createFinanceRouter(): express.Router {
         return res.status(400).json({ error: `Payment method "${paymentMethod}" is currently disabled by Admin.` });
       }
 
+      // Ensure technician from Firestore exists in SQLite before computing quote & inserting booking
+      if (body.technicianId) {
+        ensureTechnicianInSqlite(db, String(body.technicianId), body.technicianSnapshot);
+      }
+
       // Check technician booking restriction ONLY for NEW bookings!
       const walletRow = db.prepare('SELECT booking_restricted, restriction_reason FROM wallets WHERE technician_id = ?').get(body.technicianId) as any;
       if (walletRow && walletRow.booking_restricted) {
@@ -1238,7 +1371,7 @@ export function createFinanceRouter(): express.Router {
         bookingNumber,
         customerId,
         customerName: custRow?.name || body.customerName || req.auth!.name,
-        customerPhone: custRow?.phone || body.customerPhone || '01700-000000',
+        customerPhone: custRow?.phone || body.customerPhone || '',
         customerDivision: body.customerDivision || custRow?.division || 'Dhaka',
         customerDistrict: body.customerDistrict || body.customerCity || custRow?.district || 'Dhaka',
         customerCity: body.customerDistrict || body.customerCity || custRow?.city || 'Dhaka',
@@ -2556,6 +2689,7 @@ export function createFinanceRouter(): express.Router {
         return res.status(400).json({ error: 'Reserve balance must be >= 0 or null.' });
       }
       const now = new Date().toISOString();
+      db.prepare('INSERT OR IGNORE INTO wallets (technician_id, updated_at) VALUES (?, ?)').run(req.params.techId, now);
       db.prepare('UPDATE wallets SET custom_reserve_balance = ?, updated_at = ? WHERE technician_id = ?').run(val, now, req.params.techId);
       db.prepare(`
         INSERT INTO admin_audit_logs (id, admin_id, admin_name, section, action, target_id, previous_value, new_value, reason, created_at)
