@@ -122,19 +122,7 @@ export const Footer: React.FC = () => {
         </div>
 
         {/* Bottom Bar */}
-        <div className="mt-12 pt-6 border-t border-zinc-100 dark:border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-zinc-500">
-          <div>
-            {t.footer.copyright}
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>{isBangla ? '১০০% বিশ্বস্ত ও ভেরিফায়েড' : '100% Trusted & Verified'}</span>
-            </span>
-            <span>·</span>
-            <span>{isBangla ? 'ঢাকা, চট্টগ্রাম ও সিলেট' : 'Dhaka, Chattogram & Sylhet'}</span>
-          </div>
-        </div>
+
       </div>
     </footer>
   );
