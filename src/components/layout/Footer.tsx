@@ -83,7 +83,11 @@ export const Footer: React.FC = () => {
                   {isBangla ? 'রং মিস্ত্রি' : 'Painting'}
                 </Link>
               </li>
- 
+              <li>
+                <Link to="/services/carpentry" className="hover:text-orange-600 transition-colors">
+                  {isBangla ? 'কাঠ মিস্ত্রি' : 'Carpentry'}
+                </Link>
+              </li>
             </ul>
           </div>
 
