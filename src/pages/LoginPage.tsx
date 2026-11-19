@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Logo } from '../components/common/Logo';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,7 +7,8 @@ import { useToast } from '../contexts/ToastContext';
 import { ArrowRight, Eye, EyeOff, AlertCircle, LogOut, LayoutDashboard } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { currentUser, login, loginWithGoogle, logout } = useAuth();
+  const { currentUser, login, loginWithGoogle, redirectAuthUser, clearRedirectAuthUser, logout } =
+    useAuth();
   const { isBangla } = useLanguage();
   const { showToast, triggerConfettiBurst } = useToast();
   const navigate = useNavigate();
@@ -23,6 +24,20 @@ export const LoginPage: React.FC = () => {
     else if (role === 'ADMIN') navigate('/admin/dashboard');
     else navigate('/customer/dashboard');
   };
+
+  useEffect(() => {
+    if (!redirectAuthUser) return;
+    triggerConfettiBurst();
+    showToast(
+      isBangla
+        ? `স্বাগতম, ${redirectAuthUser.name}! লগইন সফল হয়েছে 🎉`
+        : `Welcome back, ${redirectAuthUser.name}! Signed in 🎉`,
+      'success'
+    );
+    const signedUser = redirectAuthUser;
+    clearRedirectAuthUser();
+    navigateByRole(signedUser.role);
+  }, [redirectAuthUser]);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +65,9 @@ export const LoginPage: React.FC = () => {
     setErrorMsg(null);
     setIsSubmitting(true);
     const res = await loginWithGoogle();
+    if (res.redirected) {
+      return;
+    }
     setIsSubmitting(false);
 
     if (!res.success || !res.user) {

@@ -1,11 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  getRedirectResult,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  User as FirebaseAuthUser,
+} from 'firebase/auth';
 import { User, UserRole } from '../types';
 import { ADMIN_EMAIL } from '../data/seedData';
 import { setStoredAuthToken, syncServerSession } from '../services/financeApi';
 import { auth } from '../services/firebase';
 import {
   getUserByEmailFromFirestore,
+  getUserByPhoneFromFirestore,
   getUserFromFirestore,
   saveUserToFirestore,
 } from '../services/firestoreService';
@@ -20,20 +28,24 @@ export interface RegisterInput {
   area?: string;
 }
 
+export interface AuthActionResult {
+  success: boolean;
+  error?: string;
+  user?: User;
+  redirected?: boolean;
+  serverTechnicianId?: string | null;
+}
+
 interface AuthContextType {
   currentUser: User | null;
   role: UserRole | null;
   isAuthenticated: boolean;
   authTokenReady: boolean;
-  login: (
-    email: string,
-    password?: string,
-    role?: UserRole
-  ) => Promise<{ success: boolean; error?: string; user?: User }>;
-  loginWithGoogle: () => Promise<{ success: boolean; error?: string; user?: User }>;
-  register: (
-    userData: RegisterInput
-  ) => Promise<{ success: boolean; error?: string; user?: User; serverTechnicianId?: string | null }>;
+  redirectAuthUser: User | null;
+  clearRedirectAuthUser: () => void;
+  login: (email: string, password?: string, role?: UserRole) => Promise<AuthActionResult>;
+  loginWithGoogle: (preferredRole?: UserRole) => Promise<AuthActionResult>;
+  register: (userData: RegisterInput) => Promise<AuthActionResult>;
   logout: () => void;
   updateProfile: (updatedData: Partial<User>) => void;
 }
@@ -41,6 +53,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const REGISTERED_USERS_KEY = 'kormigo_registered_users';
+const PENDING_GOOGLE_ROLE_KEY = 'servexa_pending_google_role';
+const PENDING_GOOGLE_REDIRECT_KEY = 'servexa_pending_google_redirect';
 
 function isLegacyDemoUser(u: Partial<User> | null | undefined): boolean {
   if (!u) return true;
@@ -98,6 +112,24 @@ function findMatchingTechnicianIdForUser(user: User): string | undefined {
   }
 }
 
+function mapFirebaseAuthError(err: any): string {
+  const code = err?.code || '';
+  if (code === 'auth/unauthorized-domain') {
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+    return `ডোমেইন (${host}) Firebase-এ অনুমোদিত নয়। Firebase Console > Authentication > Settings > Authorized domains-এ "${host}" যোগ করুন।`;
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return 'Google সাইন-ইন পপ-আপ বন্ধ করা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।';
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return 'Firebase Console-এ Google Sign-in পদ্ধতি চালু করা নেই। Authentication > Sign-in method থেকে Google চালু করুন।';
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'নেটওয়ার্ক সংযোগ ব্যর্থ হয়েছে। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।';
+  }
+  return err?.message || 'Google sign-in could not be completed.';
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('kormigo_user');
@@ -120,7 +152,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [authTokenReady, setAuthTokenReady] = useState<boolean>(false);
+  const [redirectAuthUser, setRedirectAuthUser] = useState<User | null>(null);
   const sessionSeqRef = useRef<number>(0);
+
+  const clearRedirectAuthUser = () => setRedirectAuthUser(null);
 
   const ensureServerSession = async (
     user: User | null,
@@ -157,56 +192,129 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void ensureServerSession(currentUser);
   }, [currentUser?.id, currentUser?.role]);
 
-  const loginWithGoogle = async (): Promise<{ success: boolean; error?: string; user?: User }> => {
+  const finalizeGoogleFirebaseUser = async (
+    fbUser: FirebaseAuthUser,
+    preferredRole?: UserRole
+  ): Promise<User> => {
+    const fbEmail = (fbUser.email || '').trim().toLowerCase();
+    const isDesignatedAdmin = fbEmail === ADMIN_EMAIL;
+
+    let matchedUser = await getUserFromFirestore(fbUser.uid);
+    if (!matchedUser && fbEmail) {
+      matchedUser = await getUserByEmailFromFirestore(fbEmail);
+    }
+
+    if (!matchedUser) {
+      const resolvedRole: UserRole = isDesignatedAdmin
+        ? 'ADMIN'
+        : preferredRole === 'TECHNICIAN'
+          ? 'TECHNICIAN'
+          : 'CUSTOMER';
+
+      const safeName = (
+        fbUser.displayName || (isDesignatedAdmin ? 'Wasin Ahmed' : 'Servexa User')
+      )
+        .trim()
+        .slice(0, 150);
+
+      matchedUser = {
+        id: isDesignatedAdmin ? 'admin-wasin' : fbUser.uid,
+        name: safeName,
+        email: fbEmail || fbUser.email || '',
+        phone: fbUser.phoneNumber || '',
+        role: resolvedRole,
+        avatar: fbUser.photoURL || '',
+        division: '',
+        district: '',
+        city: '',
+        area: '',
+        address: '',
+        phoneVerified: !!fbUser.phoneNumber,
+        nidVerified: false,
+        createdAt: new Date().toISOString().split('T')[0],
+      };
+      await saveUserToFirestore(matchedUser);
+    } else if (isDesignatedAdmin && matchedUser.role !== 'ADMIN') {
+      matchedUser = { ...matchedUser, role: 'ADMIN' };
+      await saveUserToFirestore(matchedUser);
+    }
+
+    cacheRegisteredUser(matchedUser);
+    await ensureServerSession(matchedUser);
+    setCurrentUser(matchedUser);
+    return matchedUser;
+  };
+
+  // Complete Google Sign-In if browser returned from signInWithRedirect (mobile / popup-blocked environments)
+  useEffect(() => {
+    let active = true;
+    const handleRedirectAuth = async () => {
+      try {
+        const res = await getRedirectResult(auth);
+        const pendingRole = localStorage.getItem(PENDING_GOOGLE_ROLE_KEY) as UserRole | null;
+        localStorage.removeItem(PENDING_GOOGLE_ROLE_KEY);
+        localStorage.removeItem(PENDING_GOOGLE_REDIRECT_KEY);
+
+        if (active && res?.user) {
+          const user = await finalizeGoogleFirebaseUser(res.user, pendingRole || undefined);
+          if (active) {
+            setRedirectAuthUser(user);
+          }
+        }
+      } catch (err: any) {
+        localStorage.removeItem(PENDING_GOOGLE_ROLE_KEY);
+        localStorage.removeItem(PENDING_GOOGLE_REDIRECT_KEY);
+        console.warn('Google redirect sign-in check:', err);
+      }
+    };
+    void handleRedirectAuth();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loginWithGoogle = async (preferredRole?: UserRole): Promise<AuthActionResult> => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+
     try {
-      const provider = new GoogleAuthProvider();
       const res = await signInWithPopup(auth, provider);
-      const fbUser = res.user;
-      const fbEmail = (fbUser.email || '').trim().toLowerCase();
-      const isDesignatedAdmin = fbEmail === ADMIN_EMAIL;
-
-      let matchedUser = await getUserFromFirestore(fbUser.uid);
-      if (!matchedUser && fbEmail) {
-        matchedUser = await getUserByEmailFromFirestore(fbEmail);
-      }
-
-      if (!matchedUser) {
-        matchedUser = {
-          id: isDesignatedAdmin ? 'admin-wasin' : fbUser.uid,
-          name: fbUser.displayName || (isDesignatedAdmin ? 'Wasin Ahmed' : 'Servexa User'),
-          email: fbEmail || fbUser.email || '',
-          phone: fbUser.phoneNumber || '',
-          role: isDesignatedAdmin ? 'ADMIN' : 'CUSTOMER',
-          avatar: fbUser.photoURL || '',
-          division: '',
-          district: '',
-          city: '',
-          area: '',
-          address: '',
-          phoneVerified: !!fbUser.phoneNumber,
-          nidVerified: false,
-          createdAt: new Date().toISOString().split('T')[0],
-        };
-        await saveUserToFirestore(matchedUser);
-      } else if (isDesignatedAdmin && matchedUser.role !== 'ADMIN') {
-        matchedUser = { ...matchedUser, role: 'ADMIN' };
-        await saveUserToFirestore(matchedUser);
-      }
-
-      cacheRegisteredUser(matchedUser);
-      await ensureServerSession(matchedUser);
-      setCurrentUser(matchedUser);
-      return { success: true, user: matchedUser };
+      const user = await finalizeGoogleFirebaseUser(res.user, preferredRole);
+      return { success: true, user };
     } catch (err: any) {
+      const code = err?.code || '';
+      if (
+        code === 'auth/popup-blocked' ||
+        code === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        try {
+          if (preferredRole) {
+            localStorage.setItem(PENDING_GOOGLE_ROLE_KEY, preferredRole);
+          } else {
+            localStorage.removeItem(PENDING_GOOGLE_ROLE_KEY);
+          }
+          localStorage.setItem(PENDING_GOOGLE_REDIRECT_KEY, '1');
+          await signInWithRedirect(auth, provider);
+          return { success: false, redirected: true };
+        } catch (redirectErr: any) {
+          localStorage.removeItem(PENDING_GOOGLE_ROLE_KEY);
+          localStorage.removeItem(PENDING_GOOGLE_REDIRECT_KEY);
+          return {
+            success: false,
+            error: mapFirebaseAuthError(redirectErr),
+          };
+        }
+      }
+
       console.warn('Google sign-in error:', err);
       return {
         success: false,
-        error: err?.message || 'Google sign-in could not be completed.',
+        error: mapFirebaseAuthError(err),
       };
     }
   };
 
-  const login = async (email: string, password?: string) => {
+  const login = async (email: string, password?: string): Promise<AuthActionResult> => {
     const identifier = email.trim();
     const emailLower = identifier.toLowerCase();
 
@@ -274,8 +382,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true, user: matchedRegistered };
     }
 
-    // Query Firebase Firestore by email or document ID
+    // Query Firebase Firestore by email, phone, or document ID (cross-device Vercel support)
     let fsUser = await getUserByEmailFromFirestore(emailLower);
+    if (!fsUser) {
+      fsUser = await getUserByPhoneFromFirestore(identifier);
+    }
     if (!fsUser) {
       fsUser = await getUserFromFirestore(identifier);
     }
@@ -300,7 +411,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   };
 
-  const register = async (userData: RegisterInput) => {
+  const register = async (userData: RegisterInput): Promise<AuthActionResult> => {
     const cleanEmail = userData.email.trim().toLowerCase();
     const cleanPhone = (userData.phone || '').trim();
 
@@ -338,7 +449,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const newUser: User = {
       id: `user-${Date.now()}`,
-      name: userData.name.trim(),
+      name: (userData.name.trim() || 'Servexa User').slice(0, 150),
       email: cleanEmail,
       phone: cleanPhone,
       password: userData.password,
@@ -372,6 +483,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sessionSeqRef.current += 1;
     setStoredAuthToken(null);
     setAuthTokenReady(false);
+    setRedirectAuthUser(null);
     setCurrentUser(null);
     void signOut(auth).catch(() => {});
   };
@@ -392,6 +504,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: currentUser?.role || null,
         isAuthenticated: !!currentUser,
         authTokenReady,
+        redirectAuthUser,
+        clearRedirectAuthUser,
         login,
         loginWithGoogle,
         register,

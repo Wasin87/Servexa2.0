@@ -149,6 +149,7 @@ const toServexaWarrantyId = (id: string): string => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
+  const [techniciansHydrated, setTechniciansHydrated] = useState(false);
 
   const [categories, setCategories] = useState<ServiceCategory[]>(() => {
     const saved = localStorage.getItem('kormigo_categories');
@@ -329,6 +330,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubTechs = subscribeToFirestoreTechnicians((remoteTechs) => {
       const clean = remoteTechs.filter((t) => !isDummyTechnician(t));
       setTechnicians(clean);
+      setTechniciansHydrated(true);
     });
 
     const unsubReviews = subscribeToFirestoreReviews((remoteReviews) => {
@@ -1156,6 +1158,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return newTech;
   };
+
+  useEffect(() => {
+    if (!techniciansHydrated || !currentUser || currentUser.role !== 'TECHNICIAN') return;
+    const exists = technicians.some(
+      (t) =>
+        t.userId === currentUser.id ||
+        (currentUser.email && t.email && t.email.toLowerCase() === currentUser.email.toLowerCase())
+    );
+    if (!exists) {
+      registerNewTechnician(currentUser, null);
+    }
+  }, [techniciansHydrated, currentUser?.id, currentUser?.role, technicians]);
 
   const verifyTechnicianField = (
     technicianId: string,

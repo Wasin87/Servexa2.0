@@ -112,7 +112,7 @@ export async function initializeFirestoreDatabase(): Promise<{ initialized: bool
  */
 export async function saveUserToFirestore(user: User): Promise<void> {
   try {
-    await setDoc(doc(db, 'users', user.id), stripUndefined(user));
+    await setDoc(doc(db, 'users', user.id), stripUndefined(user), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `users/${user.id}`);
   }
@@ -152,6 +152,22 @@ export async function getUserByEmailFromFirestore(email: string): Promise<User |
   }
 }
 
+export async function getUserByPhoneFromFirestore(phone: string): Promise<User | null> {
+  const cleanPhone = phone.trim();
+  if (!cleanPhone) return null;
+  try {
+    const q = query(collection(db, 'users'), where('phone', '==', cleanPhone), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].data() as User;
+    }
+    return null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `users?phone=${cleanPhone}`);
+    return null;
+  }
+}
+
 /**
  * Technicians
  */
@@ -172,7 +188,7 @@ export function subscribeToFirestoreTechnicians(onUpdate: (techs: Technician[]) 
 
 export async function saveTechnicianToFirestore(tech: Technician): Promise<void> {
   try {
-    await setDoc(doc(db, 'technicians', tech.id), stripUndefined(tech));
+    await setDoc(doc(db, 'technicians', tech.id), stripUndefined(tech), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `technicians/${tech.id}`);
   }
