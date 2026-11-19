@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Star, Search, ArrowRight, Flame, Sparkles } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useApp } from '../../contexts/AppContext';
-import heroExactLogoLightImg from '../../assets/images/hero_servexa_light_1794936424350.jpg';
-import heroExactLogoDarkImg from '../../assets/images/hero_servexa_dark_1794936425374.jpg';
+import heroPortrait1Img from '../../assets/images/servexa_light_banner_portrait_exact1_1795111031176.jpg';
+import heroPortrait2Img from '../../assets/images/servexa_dark_banner_portrait_exact2_1795111031108.jpg';
 
 import { BANGLADESH_DISTRICTS } from '../../data/bangladeshLocations';
 
@@ -24,13 +24,13 @@ export const Hero: React.FC = () => {
   return (
     <section className="relative overflow-hidden min-h-[420px] sm:min-h-[500px] lg:min-h-[580px] flex items-center border-b border-zinc-200 dark:border-zinc-800 transition-colors duration-300 select-none">
       
-      {/* 1. Theme-Adaptive Exact Uploaded Logo Branded Hero Banner Background */}
+      {/* 1. Theme-Adaptive Exact Portrait Banner Background */}
       <div className="absolute inset-0 z-0">
         {/* Light Mode Branded Banner */}
         <img
-          src={heroExactLogoLightImg}
+          src={heroPortrait1Img}
           alt="Servexa Light Mode Branded Home Service Banner"
-          className="w-full h-full object-cover object-[72%_center] sm:object-[70%_center] lg:object-center select-none dark:hidden"
+          className="w-full h-full object-cover object-right select-none dark:hidden"
           loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
@@ -38,9 +38,9 @@ export const Hero: React.FC = () => {
 
         {/* Dark Mode Branded Banner */}
         <img
-          src={heroExactLogoDarkImg}
+          src={heroPortrait2Img}
           alt="Servexa Dark Mode Branded Home Service Banner"
-          className="w-full h-full object-cover object-[72%_center] sm:object-[70%_center] lg:object-center select-none hidden dark:block"
+          className="w-full h-full object-cover object-right select-none hidden dark:block"
           loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
