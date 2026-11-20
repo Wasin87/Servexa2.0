@@ -121,73 +121,7 @@ Analyze the problem and respond ONLY in valid JSON matching this structure:
 });
 
 // Text generation endpoint
-app.post('/api/gemini/generate', async (req, res) => {
-  const { prompt, model, config } = req.body;
-  if (!prompt) {
-    return res.status(400).json({ error: 'prompt is required' });
-  }
 
-  const ai = getAIClient();
-  if (!ai) {
-    return res.status(503).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
-  }
-
-  try {
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini API call timed out')), 8000)
-    );
-
-    const response: any = await Promise.race([
-      ai.models.generateContent({
-        model: model || 'gemini-4-hydrogen',
-        contents: prompt,
-        config: config || {},
-      }),
-      timeoutPromise,
-    ]);
-    return res.json({ text: response.text || '' });
-  } catch (err: any) {
-    console.error('Gemini generate error:', err);
-    return res.status(500).json({ error: err?.message || 'Gemini generate failed' });
-  }
-});
-
-// Streaming text generation endpoint via Server-Sent Events (SSE)
-app.post('/api/gemini/stream', async (req, res) => {
-  const { prompt, model, config } = req.body;
-  if (!prompt) {
-    return res.status(400).json({ error: 'prompt is required' });
-  }
-
-  const ai = getAIClient();
-  if (!ai) {
-    return res.status(503).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
-  }
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-
-  try {
-    const stream = await ai.models.generateContentStream({
-      model: model || 'gemini-4-hydrogen',
-      contents: prompt,
-      config: config || {},
-    });
-
-    for await (const chunk of stream) {
-      if (chunk.text) {
-        res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
-      }
-    }
-    res.write('data: [DONE]\n\n');
-    res.end();
-  } catch (err: any) {
-    console.error('Gemini stream error:', err);
-    res.write(`data: ${JSON.stringify({ error: err?.message || 'Streaming failed' })}\n\n`);
-    res.end();
-  }
-});
 
 // WebSocket Server for Live API voice/audio streaming bridge
 const wss = new WebSocketServer({ noServer: true });
