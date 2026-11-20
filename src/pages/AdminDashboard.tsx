@@ -344,7 +344,21 @@ export const AdminDashboard: React.FC = () => {
         }
         headerActions={
           <>
-
+            <Link
+              to="/map"
+              className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold text-xs hover:border-orange-500 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            >
+              <Map className="w-4 h-4 text-orange-500" />
+              <span>{isBangla ? 'লাইভ ফ্লিট ম্যাপ' : 'Live Fleet Map'}</span>
+            </Link>
+            <Link
+              to="/heatmap"
+              className="px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-orange-600 hover:bg-zinc-800 dark:hover:bg-orange-500 text-white font-bold text-xs transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            >
+              <Flame className="w-4 h-4" />
+              <span>{isBangla ? 'ডিমান্ড হিটম্যাপ' : 'Demand Heatmap'}</span>
+            </Link>
+          </>
         }
       >
 
