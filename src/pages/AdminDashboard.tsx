@@ -171,7 +171,7 @@ export const AdminDashboard: React.FC = () => {
 
   const adminNavGroups: DashboardNavGroup[] = [
     {
-      id: 'operations',
+      id: 'operations.',
       label: isBangla ? 'অপারেশন ও মনিটরিং' : 'Operations & Oversight',
       items: [
         {
