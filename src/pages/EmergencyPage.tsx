@@ -135,44 +135,7 @@ export const EmergencyPage: React.FC = () => {
       </div>
 
       {/* Step 2: Location and details */}
-      <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-        <h2 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
-          {isBangla ? '২. আপনার এলাকা ও সংক্ষিপ্ত পরিস্থিতি' : '2. Your Location & Situation Overview'}
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              {isBangla ? 'এলাকা (ঢাকা)' : 'Area (Dhaka)'}
-            </label>
-            <select
-              value={selectedArea}
-              onChange={(e) => setSelectedArea(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500/50"
-            >
-              {dhakaAreas.map(a => (
-                <option key={a.value} value={a.value}>
-                  {isBangla ? a.labelBn : a.labelEn}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              {isBangla ? 'পরিস্থিতি সংক্ষেপে লিখুন (ঐচ্ছিক)' : 'Briefly Describe Situation (Optional)'}
-            </label>
-            <input
-              type="text"
-              value={problemBrief}
-              onChange={(e) => setProblemBrief(e.target.value)}
-              placeholder={isBangla ? 'যেমন: মেইন সুইচে স্পার্ক করছে বা ধোঁয়া উঠছে...' : 'e.g. Main switch sparking or bathroom flooding...'}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
-            />
-          </div>
-        </div>
-      </div>
-
+     
       {/* Step 3: Instant Dispatch Available Pros */}
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
