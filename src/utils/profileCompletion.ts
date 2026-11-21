@@ -7,7 +7,7 @@ export interface CompletionResult {
   missingLabelsBn: string[];
   missingLabelsEn: string[];
   isMinReady: boolean; // >= 90%
-  isComplete: boolean; // 100%
+  isComplete: boolean; // >= 98% or 100% (avatar optional for 100%)
 }
 
 const DEFAULT_AVATARS = [
@@ -19,7 +19,7 @@ export function calculateCustomerCompletion(user: Partial<User> | null | undefin
     return {
       percent: 0,
       completedCount: 0,
-      totalCount: 7,
+      totalCount: 6,
       missingLabelsBn: ['লগইন করুন'],
       missingLabelsEn: ['Login required'],
       isMinReady: false,
@@ -37,11 +37,6 @@ export function calculateCustomerCompletion(user: Partial<User> | null | undefin
       ok: !!user.phone && user.phone.trim().length >= 8,
       bn: 'মোবাইল নম্বর',
       en: 'Phone Number'
-    },
-    {
-      ok: !!user.avatar && user.avatar.trim().length > 10,
-      bn: 'প্রোফাইল ছবি',
-      en: 'Profile Photo'
     },
     {
       ok: !!user.division && user.division.trim().length > 0,
@@ -65,9 +60,13 @@ export function calculateCustomerCompletion(user: Partial<User> | null | undefin
     }
   ];
 
+  const hasAvatar = !!user.avatar && user.avatar.trim().length > 10;
   const completedCount = checks.filter(c => c.ok).length;
   const totalCount = checks.length;
-  const percent = Math.round((completedCount / totalCount) * 100);
+  const basePercent = Math.round((completedCount / totalCount) * 100);
+  
+  // If all core text fields are filled (basePercent == 100), reaching 98% without avatar or 100% with avatar
+  const percent = basePercent === 100 ? (hasAvatar ? 100 : 98) : Math.round((basePercent * 98) / 100);
 
   return {
     percent,
@@ -76,7 +75,7 @@ export function calculateCustomerCompletion(user: Partial<User> | null | undefin
     missingLabelsBn: checks.filter(c => !c.ok).map(c => c.bn),
     missingLabelsEn: checks.filter(c => !c.ok).map(c => c.en),
     isMinReady: percent >= 90,
-    isComplete: percent === 100
+    isComplete: percent >= 98
   };
 }
 
@@ -85,7 +84,7 @@ export function calculateTechnicianCompletion(tech: Partial<Technician> | null |
     return {
       percent: 0,
       completedCount: 0,
-      totalCount: 12,
+      totalCount: 11,
       missingLabelsBn: ['প্রোফাইল তথ্য'],
       missingLabelsEn: ['Profile details'],
       isMinReady: false,
@@ -108,11 +107,6 @@ export function calculateTechnicianCompletion(tech: Partial<Technician> | null |
       ok: !!tech.phone && tech.phone.trim().length >= 8,
       bn: 'মোবাইল নম্বর',
       en: 'Phone Number'
-    },
-    {
-      ok: hasAvatar || !!tech.platformVerified,
-      bn: 'নিজস্ব প্রোফাইল ছবি',
-      en: 'Profile Photo'
     },
     {
       ok: !!tech.division && tech.division.trim().length > 0,
@@ -163,7 +157,8 @@ export function calculateTechnicianCompletion(tech: Partial<Technician> | null |
 
   const completedCount = checks.filter(c => c.ok).length;
   const totalCount = checks.length;
-  const percent = Math.round((completedCount / totalCount) * 100);
+  const basePercent = Math.round((completedCount / totalCount) * 100);
+  const percent = basePercent === 100 ? (hasAvatar ? 100 : 98) : Math.round((basePercent * 98) / 100);
 
   return {
     percent,
@@ -172,6 +167,6 @@ export function calculateTechnicianCompletion(tech: Partial<Technician> | null |
     missingLabelsBn: checks.filter(c => !c.ok).map(c => c.bn),
     missingLabelsEn: checks.filter(c => !c.ok).map(c => c.en),
     isMinReady: percent >= 90,
-    isComplete: percent === 100
+    isComplete: percent >= 98
   };
 }
