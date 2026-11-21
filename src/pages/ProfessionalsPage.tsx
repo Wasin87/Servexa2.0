@@ -254,9 +254,9 @@ export const ProfessionalsPage: React.FC = () => {
                 {/* Profile Icon, Name, Work, Experience & Rating */}
                 <div className="flex items-start gap-3.5">
                   <div className="shrink-0">
-                    {tech.avatar ? (
+                    {tech.avatar?.trim() ? (
                       <img
-                        src={tech.avatar}
+                        src={tech.avatar.trim()}
                         alt={tech.name}
                         className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover ring-2 ring-orange-500/25 shadow-sm"
                         referrerPolicy="no-referrer"

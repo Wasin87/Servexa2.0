@@ -2,6 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
+import {
+  heroDarkBanner,
+  heroLightBanner,
+  serviceAcElectricalBanner,
+  servicePlumbingHomeBanner,
+} from '../../assets/serviceBanners';
 
 interface CarouselSlide {
   id: string;
@@ -38,7 +44,7 @@ const CAROUSEL_SLIDES: CarouselSlide[] = [
     secondaryBtnEn: 'View Technicians',
     secondaryBtnLink: '/professionals?category=ac_repair',
     bgGradient: 'from-blue-950 via-zinc-900 to-sky-950',
-    image: '/src/assets/images/service_ac_electrical_1794936425375.jpg',
+    image: serviceAcElectricalBanner,
     tag: '১৫ মিনিটের রেসপন্স'
   },
   {
@@ -56,7 +62,7 @@ const CAROUSEL_SLIDES: CarouselSlide[] = [
     secondaryBtnEn: 'Emergency Call',
     secondaryBtnLink: '/emergency',
     bgGradient: 'from-amber-950 via-zinc-900 to-orange-950',
-    image: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
+    image: heroDarkBanner,
     tag: 'ফ্রি ভিজিটিং গ্যারান্টি'
   },
   {
@@ -74,7 +80,7 @@ const CAROUSEL_SLIDES: CarouselSlide[] = [
     secondaryBtnEn: 'View Heatmap',
     secondaryBtnLink: '/heatmap',
     bgGradient: 'from-cyan-950 via-zinc-900 to-teal-950',
-    image: '/src/assets/images/service_plumbing_home_1794936425180.jpg',
+    image: servicePlumbingHomeBanner,
     tag: '১৪ দিনের ওয়ারেন্টি'
   },
   {
@@ -89,7 +95,7 @@ const CAROUSEL_SLIDES: CarouselSlide[] = [
     ctaTextEn: 'Security Setup',
     ctaLink: '/book?category=cctv_installation',
     bgGradient: 'from-slate-950 via-zinc-900 to-indigo-950',
-    image: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
+    image: heroDarkBanner,
     tag: 'অ্যাডভান্সড সেটআপ'
   },
   {
@@ -104,7 +110,7 @@ const CAROUSEL_SLIDES: CarouselSlide[] = [
     ctaTextEn: 'Find Pros on Map',
     ctaLink: '/map',
     bgGradient: 'from-orange-950 via-stone-900 to-zinc-950',
-    image: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
+    image: heroLightBanner,
     tag: 'সহজ চ্যাট ও বুকিং'
   },
   {
@@ -119,7 +125,7 @@ const CAROUSEL_SLIDES: CarouselSlide[] = [
     ctaTextEn: 'Register as Pro',
     ctaLink: '/become-professional',
     bgGradient: 'from-emerald-950 via-zinc-900 to-teal-950',
-    image: '/src/assets/images/service_ac_electrical_1794936425375.jpg',
+    image: serviceAcElectricalBanner,
     tag: 'গ্যারান্টেড ইনকাম'
   }
 ];

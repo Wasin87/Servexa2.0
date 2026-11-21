@@ -105,10 +105,11 @@ export const ProfessionalDetailPage: React.FC = () => {
         <div className="flex flex-col lg:flex-row justify-between gap-6 lg:gap-8 items-start">
           <div className="flex flex-col sm:flex-row gap-5 items-start sm:items-center">
             <div className="relative">
-              {technician.avatar ? (
+              {technician.avatar?.trim() ? (
                 <img
-                  src={technician.avatar}
+                  src={technician.avatar.trim()}
                   alt={technician.name}
+                  referrerPolicy="no-referrer"
                   className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl object-cover border-2 border-orange-500 shadow-md"
                 />
               ) : (
@@ -381,10 +382,11 @@ export const ProfessionalDetailPage: React.FC = () => {
                   <div key={rev.id} className="pt-3 first:pt-0 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        {rev.customerAvatar ? (
+                        {rev.customerAvatar?.trim() ? (
                           <img
-                            src={rev.customerAvatar}
+                            src={rev.customerAvatar.trim()}
                             alt={rev.customerName}
+                            referrerPolicy="no-referrer"
                             className="w-6 h-6 rounded-full object-cover"
                           />
                         ) : (

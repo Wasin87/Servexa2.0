@@ -614,13 +614,16 @@ export const BookingDetailPage: React.FC = () => {
           <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
             <div className="flex items-center gap-3">
               {(() => {
-                const liveAvatar =
+                const liveAvatar = (
                   technicians.find((t) => t.id === booking.technicianId)?.avatar ||
-                  booking.technicianAvatar;
+                  booking.technicianAvatar ||
+                  ''
+                ).trim();
                 return liveAvatar ? (
                   <img
                     src={liveAvatar}
                     alt={booking.technicianName}
+                    referrerPolicy="no-referrer"
                     className="w-14 h-14 rounded-2xl object-cover border border-orange-500"
                   />
                 ) : (

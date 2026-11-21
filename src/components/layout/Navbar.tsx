@@ -79,10 +79,11 @@ export const Navbar: React.FC = () => {
   };
 
   const renderUserAvatar = (sizeClasses: string) => {
-    const resolvedAvatar =
+    const resolvedAvatar = (
       currentUser?.role === 'TECHNICIAN'
         ? myTech?.avatar || currentUser?.avatar || ''
-        : currentUser?.avatar || '';
+        : currentUser?.avatar || ''
+    ).trim();
     if (resolvedAvatar) {
       return (
         <img

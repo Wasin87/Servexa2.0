@@ -90,6 +90,9 @@ function stripUndefined<T>(value: T): T {
   return value;
 }
 
+const isNotFoundError = (err: unknown): boolean =>
+  (err as { code?: string })?.code === 'not-found';
+
 export async function testConnection(): Promise<void> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -99,8 +102,6 @@ export async function testConnection(): Promise<void> {
     }
   }
 }
-
-void testConnection();
 
 /**
  * Ensures service categories exist in Firestore (never seeds demo technicians or dummy users).
@@ -251,9 +252,11 @@ export async function updateCategoryInFirestore(
   categoryId: string,
   updates: Partial<ServiceCategory>
 ): Promise<void> {
+  if (!categoryId) return;
   try {
     await updateDoc(doc(db, 'categories', categoryId), stripUndefined(updates));
   } catch (error) {
+    if (isNotFoundError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, `categories/${categoryId}`);
   }
 }
@@ -357,9 +360,11 @@ export async function saveBookingToFirestore(booking: Booking): Promise<void> {
 }
 
 export async function updateBookingInFirestore(bookingId: string, updates: Partial<Booking>): Promise<void> {
+  if (!bookingId) return;
   try {
     await updateDoc(doc(db, 'bookings', bookingId), stripUndefined(updates));
   } catch (error) {
+    if (isNotFoundError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, `bookings/${bookingId}`);
   }
 }
@@ -399,9 +404,11 @@ export async function saveReviewToFirestore(review: Review): Promise<void> {
 }
 
 export async function updateReviewInFirestore(reviewId: string, updates: Partial<Review>): Promise<void> {
+  if (!reviewId) return;
   try {
     await updateDoc(doc(db, 'reviews', reviewId), stripUndefined(updates));
   } catch (error) {
+    if (isNotFoundError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, `reviews/${reviewId}`);
   }
 }
@@ -444,9 +451,11 @@ export async function updateWarrantyInFirestore(
   claimId: string,
   updates: Partial<WarrantyClaim>
 ): Promise<void> {
+  if (!claimId) return;
   try {
     await updateDoc(doc(db, 'warranties', claimId), stripUndefined(updates));
   } catch (error) {
+    if (isNotFoundError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, `warranties/${claimId}`);
   }
 }
@@ -486,9 +495,11 @@ export async function saveNotificationToFirestore(notif: NotificationItem): Prom
 }
 
 export async function markNotificationReadInFirestore(notificationId: string): Promise<void> {
+  if (!notificationId) return;
   try {
     await updateDoc(doc(db, 'notifications', notificationId), { isRead: true });
   } catch (error) {
+    if (isNotFoundError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, `notifications/${notificationId}`);
   }
 }
@@ -532,9 +543,11 @@ export async function saveReportToFirestore(report: ReportItem): Promise<void> {
 }
 
 export async function updateReportInFirestore(reportId: string, updates: Partial<ReportItem>): Promise<void> {
+  if (!reportId) return;
   try {
     await updateDoc(doc(db, 'reports', reportId), stripUndefined(updates));
   } catch (error) {
+    if (isNotFoundError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, `reports/${reportId}`);
   }
 }
@@ -655,9 +668,11 @@ export async function saveChatMessageToFirestore(msg: ChatMessage): Promise<void
 }
 
 export async function markChatMessageReadInFirestore(messageId: string): Promise<void> {
+  if (!messageId) return;
   try {
     await updateDoc(doc(db, 'chatMessages', messageId), { isRead: true });
   } catch (error) {
+    if (isNotFoundError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, `chatMessages/${messageId}`);
   }
 }

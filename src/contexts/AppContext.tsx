@@ -207,6 +207,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const { currentUser } = useAuth();
   const [techniciansHydrated, setTechniciansHydrated] = useState(false);
   const pendingTechWritesRef = useRef<number>(0);
+  const autoRegisteredTechUsersRef = useRef<Set<string>>(new Set());
 
   const [categories, setCategories] = useState<ServiceCategory[]>(() => {
     const saved = localStorage.getItem('kormigo_categories');
@@ -1449,11 +1450,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (!techniciansHydrated || !currentUser || currentUser.role !== 'TECHNICIAN') return;
+    if (autoRegisteredTechUsersRef.current.has(currentUser.id)) return;
     const exists = technicians.some(
       (t) =>
         t.userId === currentUser.id ||
         (currentUser.email && t.email && t.email.toLowerCase() === currentUser.email.toLowerCase())
     );
+    autoRegisteredTechUsersRef.current.add(currentUser.id);
     if (!exists) {
       registerNewTechnician(currentUser, null);
     }

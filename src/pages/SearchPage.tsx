@@ -155,9 +155,9 @@ export const SearchPage: React.FC = () => {
                   className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between gap-3"
                 >
                   <div className="flex items-center gap-3">
-                    {tech.avatar ? (
+                    {tech.avatar?.trim() ? (
                       <img
-                        src={tech.avatar}
+                        src={tech.avatar.trim()}
                         alt={tech.name}
                         className="w-12 h-12 rounded-full object-cover ring-2 ring-orange-500/20 shadow-sm shrink-0"
                         referrerPolicy="no-referrer"

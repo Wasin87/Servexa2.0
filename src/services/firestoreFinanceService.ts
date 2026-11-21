@@ -1093,6 +1093,7 @@ export async function respondExtraChargeInFirestore(
       })
     );
   } catch (error) {
+    if ((error as { code?: string })?.code === 'not-found') return;
     handleFirestoreError(error, OperationType.UPDATE, `extraCharges/${chargeId}`);
   }
 }
@@ -1249,7 +1250,14 @@ export function subscribeToAuditLogs(onUpdate: (items: AdminAuditLog[]) => void)
 
 export async function saveAuditLogToFirestore(log: AdminAuditLog): Promise<void> {
   try {
-    await setDoc(doc(db, 'auditLogs', log.id), stripUndefined(log), { merge: true });
+    const raw = log as unknown as Record<string, unknown>;
+    const payload = {
+      ...log,
+      actorId: String(raw.actorId || log.adminId || 'admin'),
+      actionType: String(raw.actionType || log.action || 'ADMIN_ACTION'),
+      createdAt: log.createdAt || new Date().toISOString(),
+    };
+    await setDoc(doc(db, 'auditLogs', log.id), stripUndefined(payload), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `auditLogs/${log.id}`);
   }

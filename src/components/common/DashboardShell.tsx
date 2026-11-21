@@ -85,9 +85,9 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       {/* Portal Identity Block */}
       <div className="shrink-0 p-3.5 sm:p-4 border-b border-zinc-200/80 dark:border-zinc-800 space-y-2.5 bg-stone-50/50 dark:bg-zinc-950/30">
         <div className="flex items-center gap-2.5 sm:gap-3">
-          {userAvatar ? (
+          {userAvatar?.trim() ? (
             <img
-              src={userAvatar}
+              src={userAvatar.trim()}
               alt={userName}
               referrerPolicy="no-referrer"
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl object-cover border border-zinc-200 dark:border-zinc-700 shrink-0"
@@ -242,9 +242,9 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
             </div>
           </div>
 
-          {userAvatar ? (
+          {userAvatar?.trim() ? (
             <img
-              src={userAvatar}
+              src={userAvatar.trim()}
               alt={userName}
               referrerPolicy="no-referrer"
               className="w-9 h-9 rounded-xl object-cover border border-zinc-200 dark:border-zinc-700 shrink-0 shadow-xs"

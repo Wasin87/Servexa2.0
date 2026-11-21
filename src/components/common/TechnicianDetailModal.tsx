@@ -597,9 +597,9 @@ export const TechnicianDetailModal: React.FC<TechnicianDetailModalProps> = ({
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            {rev.customerAvatar && (
+                            {rev.customerAvatar?.trim() && (
                               <img
-                                src={rev.customerAvatar}
+                                src={rev.customerAvatar.trim()}
                                 alt={rev.customerName}
                                 className="w-6 h-6 rounded-full object-cover"
                                 referrerPolicy="no-referrer"

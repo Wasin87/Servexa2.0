@@ -1298,8 +1298,17 @@ export function createFinanceRouter(): express.Router {
            WHERE cc.booking_id = ?`
         ).get(b.id);
 
+        let parsedBookingJson: Record<string, any> = {};
+        if (b.booking_json) {
+          try {
+            parsedBookingJson = JSON.parse(b.booking_json);
+          } catch {
+            parsedBookingJson = {};
+          }
+        }
+
         return {
-          ...(b.booking_json ? JSON.parse(b.booking_json) : {}),
+          ...parsedBookingJson,
           id: b.id,
           bookingNumber: b.booking_number,
           status: b.status,
@@ -1332,10 +1341,12 @@ export function createFinanceRouter(): express.Router {
         return res.status(400).json({ error: `Payment method "${paymentMethod}" is currently disabled by Admin.` });
       }
 
-      // Ensure technician from Firestore exists in SQLite before computing quote & inserting booking
-      if (body.technicianId) {
-        ensureTechnicianInSqlite(db, String(body.technicianId), body.technicianSnapshot);
+      if (!body.technicianId) {
+        return res.status(400).json({ error: 'technicianId is required.' });
       }
+
+      // Ensure technician from Firestore exists in SQLite before computing quote & inserting booking
+      ensureTechnicianInSqlite(db, String(body.technicianId), body.technicianSnapshot);
 
       // Check technician booking restriction ONLY for NEW bookings!
       const walletRow = db.prepare('SELECT booking_restricted, restriction_reason FROM wallets WHERE technician_id = ?').get(body.technicianId) as any;
@@ -1344,6 +1355,11 @@ export function createFinanceRouter(): express.Router {
           error: `Selected technician is temporarily restricted from accepting new bookings due to unresolved overdue cash deposit (${walletRow.restriction_reason || 'overdue settlement'}). Please choose another technician.`,
           code: 'TECHNICIAN_BOOKING_RESTRICTED',
         });
+      }
+
+      const techRow = db.prepare('SELECT * FROM technicians WHERE id = ?').get(body.technicianId) as any;
+      if (!techRow) {
+        return res.status(404).json({ error: 'Technician not found.' });
       }
 
       // CRITICAL: Server recomputes price strictly ignoring client-sent prices or commissions!
@@ -1359,7 +1375,6 @@ export function createFinanceRouter(): express.Router {
         promoCode: body.promoCode,
       });
 
-      const techRow = db.prepare('SELECT * FROM technicians WHERE id = ?').get(body.technicianId) as any;
       const custRow = db.prepare('SELECT * FROM users WHERE id = ?').get(customerId) as any;
 
       const bookingId = String(body.id || uid('book'));
@@ -1594,9 +1609,16 @@ export function createFinanceRouter(): express.Router {
 
       const now = new Date().toISOString();
       db.transaction(() => {
-        const parsedJson = booking.booking_json ? JSON.parse(booking.booking_json) : {};
+        let parsedJson: Record<string, any> = {};
+        if (booking.booking_json) {
+          try {
+            parsedJson = JSON.parse(booking.booking_json);
+          } catch {
+            parsedJson = {};
+          }
+        }
         const nextHistory = [
-          ...(parsedJson.statusHistory || []),
+          ...(Array.isArray(parsedJson.statusHistory) ? parsedJson.statusHistory : []),
           { status, timestamp: now, noteEn: noteEn || status, noteBn: noteBn || status },
         ];
         const nextJson = { ...parsedJson, status, statusHistory: nextHistory, updatedAt: now };
@@ -1791,9 +1813,16 @@ export function createFinanceRouter(): express.Router {
         });
       }
 
-      const snapshot = db.prepare('SELECT final_agreed_amount FROM booking_price_snapshots WHERE booking_id = ?').get(bookingId) as { final_agreed_amount: number };
+      const snapshot = db
+        .prepare('SELECT final_agreed_amount FROM booking_price_snapshots WHERE booking_id = ?')
+        .get(bookingId) as { final_agreed_amount?: number } | undefined;
       // CRITICAL: Server uses immutable snapshot final_agreed_amount, never client amount!
-      const serverAmount = roundBDT(Number(snapshot.final_agreed_amount));
+      const serverAmount = roundBDT(
+        Number(snapshot?.final_agreed_amount ?? booking.final_total ?? booking.estimated_total_max ?? 0)
+      );
+      if (!Number.isFinite(serverAmount) || serverAmount <= 0) {
+        return res.status(400).json({ error: 'Invalid or missing payable amount for this booking.' });
+      }
       const txId = uid('ptx');
 
       const adapterRes = await initiateOnlinePaymentWithProvider({

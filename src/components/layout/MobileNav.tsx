@@ -159,9 +159,9 @@ export const MobileNav: React.FC = () => {
                 </span>
               )}
 
-              {item.avatar ? (
+              {item.avatar?.trim() ? (
                 <img
-                  src={item.avatar}
+                  src={item.avatar.trim()}
                   alt={item.label}
                   className={`w-4 h-4 rounded-full object-cover mb-0.5 ring-1 aspect-square shrink-0 ${
                     isItemActive ? 'ring-orange-500' : 'ring-zinc-300 dark:ring-zinc-700'

@@ -1,6 +1,12 @@
 import React, { useRef, useState } from 'react';
 import { Camera, Upload, Check, Image as ImageIcon, RotateCcw } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
+import {
+  serviceAcElectricalBanner,
+  servicePlumbingHomeBanner,
+  techPortraitSenior,
+  techPortraitSpecialist,
+} from '../../assets/serviceBanners';
 
 interface ImageUploaderProps {
   currentImage: string;
@@ -116,10 +122,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   };
 
   const samplePresets = [
-    { label: 'Pro 1', url: '/src/assets/images/tech_portrait_senior_1794936426060.jpg' },
-    { label: 'Pro 2', url: '/src/assets/images/tech_portrait_specialist_1794936426858.jpg' },
-    { label: 'Work 1', url: '/src/assets/images/service_ac_electrical_1794936425375.jpg' },
-    { label: 'Work 2', url: '/src/assets/images/service_plumbing_home_1794936425180.jpg' }
+    { label: 'Pro 1', url: techPortraitSenior },
+    { label: 'Pro 2', url: techPortraitSpecialist },
+    { label: 'Work 1', url: serviceAcElectricalBanner },
+    { label: 'Work 2', url: servicePlumbingHomeBanner }
   ];
 
   return (

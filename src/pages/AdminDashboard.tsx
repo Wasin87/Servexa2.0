@@ -620,8 +620,8 @@ export const AdminDashboard: React.FC = () => {
                       <tr key={tech.id} className="hover:bg-stone-50/50 dark:hover:bg-zinc-800/40 transition-colors">
                         <td className="p-4">
                           <div className="flex items-center gap-3">
-                            {tech.avatar ? (
-                              <img src={tech.avatar} alt={tech.name} className="w-10 h-10 rounded-xl object-cover border border-orange-500/20 shrink-0" />
+                            {tech.avatar?.trim() ? (
+                              <img src={tech.avatar.trim()} alt={tech.name} referrerPolicy="no-referrer" className="w-10 h-10 rounded-xl object-cover border border-orange-500/20 shrink-0" />
                             ) : (
                               <div className="w-10 h-10 rounded-xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/20 shrink-0">
                                 {(tech.name || 'T').charAt(0).toUpperCase()}
@@ -1224,8 +1224,8 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'profile' && (
         <div className="max-w-2xl bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-xs space-y-6">
           <div className="flex items-center gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
-            {adminAvatar ? (
-              <img src={adminAvatar} alt={adminName} className="w-16 h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0" />
+            {adminAvatar?.trim() ? (
+              <img src={adminAvatar.trim()} alt={adminName} referrerPolicy="no-referrer" className="w-16 h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0" />
             ) : (
               <div className="w-16 h-16 rounded-2xl bg-orange-600 text-white font-black text-xl flex items-center justify-center border-2 border-orange-500 shadow-sm shrink-0">
                 {(adminName || 'A').charAt(0).toUpperCase()}
@@ -1479,10 +1479,11 @@ export const AdminDashboard: React.FC = () => {
             <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95">
               <div className="flex items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
                 <div className="flex items-center gap-3.5">
-                  {inspectedTech.avatar ? (
+                  {inspectedTech.avatar?.trim() ? (
                     <img
-                      src={inspectedTech.avatar}
+                      src={inspectedTech.avatar.trim()}
                       alt={inspectedTech.name}
+                      referrerPolicy="no-referrer"
                       className="w-16 h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0"
                     />
                   ) : (
@@ -1622,9 +1623,9 @@ export const AdminDashboard: React.FC = () => {
                     <div className="font-bold text-zinc-700 dark:text-zinc-300">
                       {isBangla ? 'NID সামনের অংশ (Front)' : 'NID Front Side'}
                     </div>
-                    {inspectedTech.nidFrontImage ? (
+                    {inspectedTech.nidFrontImage?.trim() ? (
                       <img
-                        src={inspectedTech.nidFrontImage}
+                        src={inspectedTech.nidFrontImage.trim()}
                         alt="NID Front"
                         className="w-full h-40 object-cover rounded-xl border border-zinc-300 dark:border-zinc-700"
                       />
@@ -1639,9 +1640,9 @@ export const AdminDashboard: React.FC = () => {
                     <div className="font-bold text-zinc-700 dark:text-zinc-300">
                       {isBangla ? 'NID পেছনের অংশ (Back)' : 'NID Back Side'}
                     </div>
-                    {inspectedTech.nidBackImage ? (
+                    {inspectedTech.nidBackImage?.trim() ? (
                       <img
-                        src={inspectedTech.nidBackImage}
+                        src={inspectedTech.nidBackImage.trim()}
                         alt="NID Back"
                         className="w-full h-40 object-cover rounded-xl border border-zinc-300 dark:border-zinc-700"
                       />

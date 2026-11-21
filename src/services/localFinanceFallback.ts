@@ -546,7 +546,14 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
   const parsedUrl = new URL(url, 'http://localhost');
   const path = parsedUrl.pathname;
   const method = (options.method || 'GET').toUpperCase();
-  const body = options.body && typeof options.body === 'string' ? JSON.parse(options.body) : {};
+  let body: Record<string, any> = {};
+  if (options.body && typeof options.body === 'string') {
+    try {
+      body = JSON.parse(options.body);
+    } catch {
+      body = {};
+    }
+  }
   const state = loadState();
   const session = getSessionUser();
   const techs = getAppTechnicians();

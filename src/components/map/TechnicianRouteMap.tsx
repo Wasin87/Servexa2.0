@@ -291,6 +291,7 @@ export const TechnicianRouteMap: React.FC<TechnicianRouteMapProps> = ({
     const controller = new AbortController();
 
     const drawRouteAndMarkers = (latLngs: [number, number][]) => {
+      if (cancelled) return;
       const map = mapInstanceRef.current;
       const layer = routeLayerRef.current;
       if (!layer || !map) return;
@@ -328,7 +329,10 @@ export const TechnicianRouteMap: React.FC<TechnicianRouteMapProps> = ({
         : DHAKA_CENTER.lng;
 
       // Marker 1: Technician
-      const safeName = technician.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeName = (technician.name || 'Technician')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
       const techMarkerTitle =
         viewerRole === 'customer'
           ? isBangla
@@ -337,8 +341,11 @@ export const TechnicianRouteMap: React.FC<TechnicianRouteMapProps> = ({
           : isBangla
             ? 'আপনি (টেকনিশিয়ান)'
             : 'You (Tech)';
-      const techAvatarHtml = technician.avatar?.trim()
-        ? `<img src="${technician.avatar}" alt="${safeName}" style="width:100%;height:100%;object-fit:cover;" />`
+      const rawAvatar = technician.avatar?.trim() || '';
+      const isSafeAvatarUrl = /^(https?:\/\/|data:image\/|\/)/i.test(rawAvatar);
+      const safeAvatarUrl = rawAvatar.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const techAvatarHtml = isSafeAvatarUrl
+        ? `<img src="${safeAvatarUrl}" alt="${safeName}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;" />`
         : `<span style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#ffffff;font-weight:900;font-size:14px;">${(safeName || 'T').charAt(0).toUpperCase()}</span>`;
       const techHtml = `
         <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-85%);user-select:none;">
@@ -490,6 +497,7 @@ export const TechnicianRouteMap: React.FC<TechnicianRouteMapProps> = ({
           isBangla
         );
 
+        if (cancelled || !mapInstanceRef.current || !routeLayerRef.current) return;
         drawRouteAndMarkers(coords);
         setRouteSummary({
           distanceMeters: distanceMeters || fbGuide.distanceMeters,

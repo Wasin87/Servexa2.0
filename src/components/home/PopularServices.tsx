@@ -27,6 +27,7 @@ import {
 import { useApp } from '../../contexts/AppContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { CATEGORY_BANNERS } from '../../pages/ServicesPage';
+import { serviceAcElectricalBanner } from '../../assets/serviceBanners';
 
 const iconMap: Record<string, React.ElementType> = {
   Zap,
@@ -52,7 +53,7 @@ const iconMap: Record<string, React.ElementType> = {
   Settings
 };
 
-const DEFAULT_BANNER = '/src/assets/images/service_ac_electrical_1794936425375.jpg';
+const DEFAULT_BANNER = serviceAcElectricalBanner;
 
 export const PopularServices: React.FC = () => {
   const { categories } = useApp();

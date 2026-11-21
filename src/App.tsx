@@ -16,6 +16,7 @@ import { SplashLoader } from './components/common/SplashLoader';
 import { FloatingPWAWidget } from './components/common/FloatingPWAWidget';
 import { ScrollToTopButton } from './components/common/ScrollToTopButton';
 import { ScrollToTop } from './components/common/ScrollToTop';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 // Layout
 import { Navbar } from './components/layout/Navbar';
@@ -68,7 +69,11 @@ const TechnicianVerificationGuard: React.FC<{ children: React.ReactNode }> = ({ 
   const location = useLocation();
 
   if (currentUser?.role === 'TECHNICIAN') {
-    const myTech = technicians.find(t => t.userId === currentUser.id);
+    const myTech = technicians.find(
+      (t) =>
+        t.userId === currentUser.id ||
+        (!!currentUser.email && !!t.email && t.email.toLowerCase() === currentUser.email.toLowerCase())
+    );
     if (myTech) {
       const comp = calculateTechnicianCompletion(myTech);
       const isApproved = !!myTech.skillVerified && comp.isMinReady;
@@ -92,13 +97,14 @@ const TechnicianVerificationGuard: React.FC<{ children: React.ReactNode }> = ({ 
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <LanguageProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <AppProvider>
-              <SplashLoader />
-              <BrowserRouter>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <LanguageProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <AppProvider>
+                <SplashLoader />
+                <BrowserRouter>
                 <ScrollToTop />
                 <div className="min-h-screen flex flex-col overflow-x-clip bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200 selection:bg-orange-500 selection:text-white">
                   <Navbar />
@@ -277,5 +283,6 @@ export default function App() {
         </ToastProvider>
       </LanguageProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }

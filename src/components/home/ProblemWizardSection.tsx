@@ -161,10 +161,11 @@ export const ProblemWizardSection: React.FC = () => {
                     >
                       <div>
                         <div className="flex items-center gap-2.5 mb-2.5">
-                          {tech.avatar ? (
+                          {tech.avatar?.trim() ? (
                             <img
-                              src={tech.avatar}
+                              src={tech.avatar.trim()}
                               alt={tech.name}
+                              referrerPolicy="no-referrer"
                               className="w-10 h-10 rounded-full object-cover border border-orange-500"
                             />
                           ) : (

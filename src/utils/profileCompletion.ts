@@ -1,4 +1,5 @@
 import { Technician, User } from '../types';
+import { techPortraitSenior } from '../assets/serviceBanners';
 
 export interface CompletionResult {
   percent: number;
@@ -11,6 +12,7 @@ export interface CompletionResult {
 }
 
 const DEFAULT_AVATARS = [
+  techPortraitSenior,
   '/src/assets/images/tech_portrait_senior_1794936426060.jpg'
 ];
 

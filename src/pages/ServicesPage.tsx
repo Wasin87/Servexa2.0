@@ -32,6 +32,12 @@ import {
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { toBengaliNumber } from '../utils/geoUtils';
+import {
+  heroDarkBanner,
+  heroLightBanner,
+  serviceAcElectricalBanner,
+  servicePlumbingHomeBanner,
+} from '../assets/serviceBanners';
 
 const iconMap: Record<string, React.ElementType> = {
   Zap, Droplets, Wind, Refrigerator, Disc, Tv, Laptop, Smartphone,
@@ -40,30 +46,30 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 export const CATEGORY_BANNERS: Record<string, string> = {
-  electrical: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
-  plumbing: '/src/assets/images/service_plumbing_home_1794936425180.jpg',
-  ac_repair: '/src/assets/images/service_ac_electrical_1794936425375.jpg',
-  refrigerator: '/src/assets/images/service_ac_electrical_1794936425375.jpg',
-  washing_machine: '/src/assets/images/service_plumbing_home_1794936425180.jpg',
-  tv_repair: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
-  computer_repair: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
-  mobile_repair: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
-  painting: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
-  carpentry: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
-  masonry: '/src/assets/images/service_plumbing_home_1794936425180.jpg',
-  home_cleaning: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
-  appliance_repair: '/src/assets/images/service_ac_electrical_1794936425375.jpg',
-  locksmith: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
-  generator_service: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
-  cctv_installation: '/src/assets/images/hero_servexa_dark_1794936425374.jpg',
-  internet_wifi: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
-  mechanic: '/src/assets/images/service_plumbing_home_1794936425180.jpg',
-  gardening: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
-  moving_transport: '/src/assets/images/hero_servexa_light_1794936424350.jpg',
-  other_services: '/src/assets/images/service_ac_electrical_1794936425375.jpg',
+  electrical: heroDarkBanner,
+  plumbing: servicePlumbingHomeBanner,
+  ac_repair: serviceAcElectricalBanner,
+  refrigerator: serviceAcElectricalBanner,
+  washing_machine: servicePlumbingHomeBanner,
+  tv_repair: heroLightBanner,
+  computer_repair: heroDarkBanner,
+  mobile_repair: heroDarkBanner,
+  painting: heroLightBanner,
+  carpentry: heroLightBanner,
+  masonry: servicePlumbingHomeBanner,
+  home_cleaning: heroLightBanner,
+  appliance_repair: serviceAcElectricalBanner,
+  locksmith: heroDarkBanner,
+  generator_service: heroDarkBanner,
+  cctv_installation: heroDarkBanner,
+  internet_wifi: heroLightBanner,
+  mechanic: servicePlumbingHomeBanner,
+  gardening: heroLightBanner,
+  moving_transport: heroLightBanner,
+  other_services: serviceAcElectricalBanner,
 };
 
-const DEFAULT_BANNER = '/src/assets/images/service_ac_electrical_1794936425375.jpg';
+const DEFAULT_BANNER = serviceAcElectricalBanner;
 
 export const ServicesPage: React.FC = () => {
   const { categories } = useApp();

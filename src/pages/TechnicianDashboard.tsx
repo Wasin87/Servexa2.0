@@ -2066,8 +2066,8 @@ export const TechnicianDashboard: React.FC = () => {
                 <div key={rev.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      {rev.customerAvatar ? (
-                        <img src={rev.customerAvatar} alt={rev.customerName} className="w-10 h-10 rounded-full object-cover border border-orange-500/30 shrink-0" />
+                      {rev.customerAvatar?.trim() ? (
+                        <img src={rev.customerAvatar.trim()} alt={rev.customerName} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full object-cover border border-orange-500/30 shrink-0" />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
                           {(rev.customerName || 'C').charAt(0).toUpperCase()}
@@ -2563,8 +2563,8 @@ export const TechnicianDashboard: React.FC = () => {
                 <div key={item.id} className="p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3 relative group">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="relative overflow-hidden rounded-xl bg-stone-100 dark:bg-zinc-800">
-                      {item.beforeImage ? (
-                        <img src={item.beforeImage} alt="Before Work" className="w-full h-32 object-cover border border-zinc-200 dark:border-zinc-700" />
+                      {item.beforeImage?.trim() ? (
+                        <img src={item.beforeImage.trim()} alt="Before Work" className="w-full h-32 object-cover border border-zinc-200 dark:border-zinc-700" />
                       ) : (
                         <div className="w-full h-32 flex items-center justify-center text-[11px] text-zinc-400">
                           {isBangla ? 'ছবি নেই' : 'No photo'}
@@ -2575,8 +2575,8 @@ export const TechnicianDashboard: React.FC = () => {
                       </span>
                     </div>
                     <div className="relative overflow-hidden rounded-xl bg-stone-100 dark:bg-zinc-800">
-                      {item.afterImage ? (
-                        <img src={item.afterImage} alt="After Work" className="w-full h-32 object-cover border-2 border-emerald-500" />
+                      {item.afterImage?.trim() ? (
+                        <img src={item.afterImage.trim()} alt="After Work" className="w-full h-32 object-cover border-2 border-emerald-500" />
                       ) : (
                         <div className="w-full h-32 flex items-center justify-center text-[11px] text-zinc-400">
                           {isBangla ? 'ছবি নেই' : 'No photo'}

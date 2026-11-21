@@ -687,13 +687,16 @@ export const CustomerDashboard: React.FC = () => {
                       {/* Technician Info */}
                       <div className="flex items-center gap-3 p-3 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60">
                         {(() => {
-                          const liveTechAvatar =
+                          const liveTechAvatar = (
                             technicians.find((t) => t.id === booking.technicianId)?.avatar ||
-                            booking.technicianAvatar;
+                            booking.technicianAvatar ||
+                            ''
+                          ).trim();
                           return liveTechAvatar ? (
                             <img
                               src={liveTechAvatar}
                               alt={booking.technicianName}
+                              referrerPolicy="no-referrer"
                               className="w-12 h-12 rounded-xl object-cover border border-orange-500/30 shrink-0"
                             />
                           ) : (
@@ -882,11 +885,13 @@ export const CustomerDashboard: React.FC = () => {
                   <div key={b.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border-2 border-amber-400/50 shadow-sm flex flex-col justify-between gap-3 sm:gap-4">
                     <div className="flex items-start gap-3">
                       {(() => {
-                        const liveTechAvatar =
+                        const liveTechAvatar = (
                           technicians.find((t) => t.id === b.technicianId)?.avatar ||
-                          b.technicianAvatar;
+                          b.technicianAvatar ||
+                          ''
+                        ).trim();
                         return liveTechAvatar ? (
-                          <img src={liveTechAvatar} alt={b.technicianName} className="w-12 h-12 rounded-2xl object-cover border border-orange-500/30 shrink-0" />
+                          <img src={liveTechAvatar} alt={b.technicianName} referrerPolicy="no-referrer" className="w-12 h-12 rounded-2xl object-cover border border-orange-500/30 shrink-0" />
                         ) : (
                           <div className="w-12 h-12 rounded-2xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
                             {(b.technicianName || 'T').charAt(0).toUpperCase()}
@@ -1154,8 +1159,8 @@ export const CustomerDashboard: React.FC = () => {
                   className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-3.5 sm:space-y-4 hover:border-orange-500/40 transition-all"
                 >
                   <div className="flex items-start gap-3">
-                    {tech.avatar ? (
-                      <img src={tech.avatar} alt={tech.name} className="w-14 h-14 rounded-2xl object-cover border-2 border-orange-500/30 shrink-0" />
+                    {tech.avatar?.trim() ? (
+                      <img src={tech.avatar.trim()} alt={tech.name} referrerPolicy="no-referrer" className="w-14 h-14 rounded-2xl object-cover border-2 border-orange-500/30 shrink-0" />
                     ) : (
                       <div className="w-14 h-14 rounded-2xl bg-orange-600 text-white font-black text-lg flex items-center justify-center border-2 border-orange-500/30 shrink-0">
                         {(tech.name || 'T').charAt(0).toUpperCase()}

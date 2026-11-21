@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { Booking } from '../../types';
 import { StatusBadge } from './StatusBadge';
+import { serviceAcElectricalBanner, servicePlumbingHomeBanner } from '../../assets/serviceBanners';
 
 interface ChatModalProps {
   booking: Booking;
@@ -84,10 +85,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }
         <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-950">
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative shrink-0">
-              {otherPartyAvatar ? (
+              {otherPartyAvatar?.trim() ? (
                 <img
                   src={otherPartyAvatar}
                   alt={otherPartyName}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
                   className="w-10 h-10 rounded-full object-cover border-2 border-orange-500 shadow-xs"
                 />
               ) : (
@@ -208,10 +213,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }
                         : 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 rounded-bl-xs'
                     }`}
                   >
-                    {msg.attachmentUrl && (
+                    {msg.attachmentUrl?.trim() && (
                       <img
                         src={msg.attachmentUrl}
                         alt="Attachment"
+                        referrerPolicy="no-referrer"
                         className="rounded-xl max-h-40 object-cover w-full border border-black/10"
                       />
                     )}
@@ -243,7 +249,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }
         </div>
 
         {/* Selected Image Attachment Bar */}
-        {selectedPhoto && (
+        {selectedPhoto?.trim() && (
           <div className="px-4 py-2 bg-orange-50 dark:bg-orange-950/40 border-t border-orange-200 dark:border-orange-900/50 flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs">
               <img src={selectedPhoto} alt="Preview" className="w-8 h-8 rounded-lg object-cover border border-orange-500" />
@@ -266,8 +272,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }
             type="button"
             onClick={() => {
               const sampleImages = [
-                '/src/assets/images/service_ac_electrical_1794936425375.jpg',
-                '/src/assets/images/service_plumbing_home_1794936425180.jpg'
+                serviceAcElectricalBanner,
+                servicePlumbingHomeBanner
               ];
               setSelectedPhoto(sampleImages[Math.floor(Math.random() * sampleImages.length)]);
             }}

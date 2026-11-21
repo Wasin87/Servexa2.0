@@ -219,16 +219,52 @@ export const BookPage: React.FC = () => {
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const result = ev.target?.result as string;
-        if (result) {
-          setMediaUrls((prev) => [...prev, result]);
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !file.type.startsWith('image/')) return;
+    if (file.size > 10 * 1024 * 1024) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      if (!result) return;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 560;
+        const maxBase64Length = 140000;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          let quality = 0.8;
+          let compressed = canvas.toDataURL('image/jpeg', quality);
+          while (compressed.length > maxBase64Length && quality > 0.5) {
+            quality -= 0.08;
+            compressed = canvas.toDataURL('image/jpeg', quality);
+          }
+          setMediaUrls((prev) => [...prev.slice(-3), compressed]);
+        } else {
+          setMediaUrls((prev) => [...prev.slice(-3), result]);
         }
       };
-      reader.readAsDataURL(e.target.files[0]);
-    }
+      img.src = result;
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleDetectCustomerGps = () => {

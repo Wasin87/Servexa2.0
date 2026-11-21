@@ -189,7 +189,12 @@ export function diagnoseProblemWithRules(
     bestMatchCategory = 'electrical'; // most common home query fallback
   }
 
-  const categoryObj = categories.find(c => c.id === bestMatchCategory) || categories[0];
+  const categoryObj = categories.find(c => c.id === bestMatchCategory) || categories[0] || {
+    id: bestMatchCategory || 'electrical',
+    nameEn: 'Home Repair & Maintenance',
+    nameBn: 'হোম মেরামত ও সার্ভিস',
+    startingPrice: 250,
+  };
   const rule = categoryRules[bestMatchCategory] || {
     visitingFee: categoryObj.startingPrice || 250,
     labourMin: 300,

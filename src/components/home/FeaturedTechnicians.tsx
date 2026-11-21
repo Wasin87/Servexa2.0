@@ -86,9 +86,9 @@ export const FeaturedTechnicians: React.FC = () => {
               >
                 <div className="flex items-start gap-3.5">
                   <div className="shrink-0">
-                    {tech.avatar ? (
+                    {tech.avatar?.trim() ? (
                       <img
-                        src={tech.avatar}
+                        src={tech.avatar.trim()}
                         alt={tech.name}
                         className="w-14 h-14 rounded-full object-cover ring-2 ring-orange-500/25 shadow-sm"
                         referrerPolicy="no-referrer"
