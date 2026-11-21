@@ -114,6 +114,7 @@ export const CustomerDashboard: React.FC = () => {
   const [profileArea, setProfileArea] = useState(currentUser?.area || '');
   const [profileAddress, setProfileAddress] = useState(currentUser?.address || '');
   const [profileSaved, setProfileSaved] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     const param = searchParams.get('tab');
@@ -136,7 +137,17 @@ export const CustomerDashboard: React.FC = () => {
       setProfileArea(currentUser.area || '');
       setProfileAddress(currentUser.address || '');
     }
-  }, [currentUser?.id]);
+  }, [
+    currentUser?.id,
+    currentUser?.name,
+    currentUser?.phone,
+    currentUser?.avatar,
+    currentUser?.division,
+    currentUser?.district,
+    currentUser?.city,
+    currentUser?.area,
+    currentUser?.address,
+  ]);
 
   const customerCompletion = calculateCustomerCompletion(currentUser);
   const districtsInDivision = getDistrictsByDivision(profileDivision || undefined);
@@ -273,8 +284,36 @@ export const CustomerDashboard: React.FC = () => {
     }
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleCustomerAvatarChange = async (nextAvatar: string) => {
+    const cleaned = nextAvatar.trim();
+    setProfileAvatar(cleaned);
+    const saved = await updateProfile({ avatar: cleaned });
+    if (saved) {
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 3000);
+      showToast(
+        cleaned
+          ? isBangla
+            ? 'নতুন প্রোফাইল ছবি ডাটাবেসে সংরক্ষিত হয়েছে!'
+            : 'Profile photo saved to database!'
+          : isBangla
+          ? 'প্রোফাইল ছবি সরানো হয়েছে।'
+          : 'Profile photo removed.',
+        cleaned ? 'success' : 'info'
+      );
+    } else {
+      showToast(
+        isBangla
+          ? 'ডাটাবেসে ছবি সংরক্ষণ করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।'
+          : 'Failed to save photo to database. Please try again.',
+        'error'
+      );
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSavingProfile(true);
     const updatedFields = {
       name: profileName.trim(),
       phone: profilePhone.trim(),
@@ -285,7 +324,18 @@ export const CustomerDashboard: React.FC = () => {
       area: profileArea,
       address: profileAddress.trim()
     };
-    updateProfile(updatedFields);
+    const saved = await updateProfile(updatedFields);
+    setSavingProfile(false);
+    if (!saved) {
+      showToast(
+        isBangla
+          ? 'প্রোফাইল তথ্য ডাটাবেসে সংরক্ষণ করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করুন।'
+          : 'Could not save profile to database. Check your connection.',
+        'error'
+      );
+      return;
+    }
+
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 3500);
 
@@ -636,17 +686,22 @@ export const CustomerDashboard: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                       {/* Technician Info */}
                       <div className="flex items-center gap-3 p-3 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60">
-                        {booking.technicianAvatar ? (
-                          <img
-                            src={booking.technicianAvatar}
-                            alt={booking.technicianName}
-                            className="w-12 h-12 rounded-xl object-cover border border-orange-500/30 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
-                            {(booking.technicianName || 'T').charAt(0).toUpperCase()}
-                          </div>
-                        )}
+                        {(() => {
+                          const liveTechAvatar =
+                            technicians.find((t) => t.id === booking.technicianId)?.avatar ||
+                            booking.technicianAvatar;
+                          return liveTechAvatar ? (
+                            <img
+                              src={liveTechAvatar}
+                              alt={booking.technicianName}
+                              className="w-12 h-12 rounded-xl object-cover border border-orange-500/30 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
+                              {(booking.technicianName || 'T').charAt(0).toUpperCase()}
+                            </div>
+                          );
+                        })()}
                         <div className="min-w-0">
                           <div className="font-extrabold text-xs text-zinc-900 dark:text-white truncate">
                             {booking.technicianName}
@@ -826,13 +881,18 @@ export const CustomerDashboard: React.FC = () => {
                 {pendingFeedbackBookings.map(b => (
                   <div key={b.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border-2 border-amber-400/50 shadow-sm flex flex-col justify-between gap-3 sm:gap-4">
                     <div className="flex items-start gap-3">
-                      {b.technicianAvatar ? (
-                        <img src={b.technicianAvatar} alt={b.technicianName} className="w-12 h-12 rounded-2xl object-cover border border-orange-500/30 shrink-0" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-2xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
-                          {(b.technicianName || 'T').charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      {(() => {
+                        const liveTechAvatar =
+                          technicians.find((t) => t.id === b.technicianId)?.avatar ||
+                          b.technicianAvatar;
+                        return liveTechAvatar ? (
+                          <img src={liveTechAvatar} alt={b.technicianName} className="w-12 h-12 rounded-2xl object-cover border border-orange-500/30 shrink-0" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-2xl bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
+                            {(b.technicianName || 'T').charAt(0).toUpperCase()}
+                          </div>
+                        );
+                      })()}
                       <div>
                         <span className="text-[11px] font-mono font-bold text-orange-600">#{b.bookingNumber}</span>
                         <h4 className="font-black text-sm text-zinc-900 dark:text-white">
@@ -1356,8 +1416,8 @@ export const CustomerDashboard: React.FC = () => {
             {/* Direct Device Image Uploader */}
             <ImageUploader
               currentImage={profileAvatar}
-              onImageChange={setProfileAvatar}
-              onRemove={() => setProfileAvatar('')}
+              onImageChange={(url) => void handleCustomerAvatarChange(url)}
+              onRemove={() => void handleCustomerAvatarChange('')}
               showPresets={false}
               label={isBangla ? 'প্রোফাইল ছবি (ডিভাইস থেকে সরাসরি আপলোড করুন):' : 'Profile Photo (Direct Device Upload):'}
               shape="circle"
@@ -1463,9 +1523,16 @@ export const CustomerDashboard: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="submit"
-                className="flex-1 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs shadow-md shadow-orange-600/20 cursor-pointer"
+                disabled={savingProfile}
+                className="flex-1 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white font-extrabold text-xs shadow-md shadow-orange-600/20 cursor-pointer"
               >
-                {isBangla ? 'তথ্য সংরক্ষণ ও হালনাগাদ করুন' : 'Save & Update Profile'}
+                {savingProfile
+                  ? isBangla
+                    ? 'সংরক্ষণ হচ্ছে...'
+                    : 'Saving...'
+                  : isBangla
+                  ? 'তথ্য সংরক্ষণ ও হালনাগাদ করুন'
+                  : 'Save & Update Profile'}
               </button>
               {customerCompletion.isComplete && (
                 <Link

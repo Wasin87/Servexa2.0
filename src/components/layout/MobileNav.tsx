@@ -92,7 +92,7 @@ export const MobileNav: React.FC = () => {
       to: '/technician/dashboard?tab=profile',
       label: isBangla ? 'প্রোফাইল' : 'Profile',
       icon: User,
-      avatar: currentUser?.avatar || undefined,
+      avatar: myTech?.avatar || currentUser?.avatar || undefined,
     },
   ];
 

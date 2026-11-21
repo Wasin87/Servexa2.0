@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User,
   Booking,
@@ -35,9 +35,11 @@ import {
   deleteBookingFromFirestore,
   subscribeToFirestoreTechnicians,
   saveTechnicianToFirestore,
+  updateTechnicianInFirestore,
   deleteTechnicianFromFirestore,
   subscribeToFirestoreReviews,
   saveReviewToFirestore,
+  updateReviewInFirestore,
   subscribeToFirestoreWarranties,
   saveWarrantyToFirestore,
   deleteWarrantyFromFirestore,
@@ -115,8 +117,9 @@ interface AppContextType {
     field: 'phoneVerified' | 'nidVerified' | 'skillVerified' | 'platformVerified',
     value: boolean
   ) => void;
+  techniciansHydrated: boolean;
   registerNewTechnician: (user: User, preferredTechId?: string | null) => Technician;
-  updateTechnicianProfile: (technicianId: string, profileData: Partial<Technician>) => void;
+  updateTechnicianProfile: (technicianId: string, profileData: Partial<Technician>) => Promise<boolean>;
   deleteTechnician: (technicianId: string) => void;
   addTechnicianPortfolio: (technicianId: string, item: Omit<PortfolioItem, 'id'>) => void;
   deleteTechnicianPortfolio: (technicianId: string, itemId: string) => void;
@@ -169,9 +172,41 @@ const toServexaWarrantyId = (id: string): string => {
   return toServexaId(id);
 };
 
+function safeSetLocalStorage(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore storage quota errors gracefully
+  }
+}
+
+function safeSetTechniciansCache(list: Technician[]) {
+  try {
+    localStorage.setItem('kormigo_technicians', JSON.stringify(list));
+  } catch {
+    try {
+      // Fallback: strip heavy NID & portfolio base64 blobs while preserving avatar & core profile fields
+      const lightweight = list.map((t) => ({
+        ...t,
+        nidFrontImage: '',
+        nidBackImage: '',
+        portfolio: (t.portfolio || []).map((p) => ({
+          ...p,
+          beforeImage: '',
+          afterImage: '',
+        })),
+      }));
+      localStorage.setItem('kormigo_technicians', JSON.stringify(lightweight));
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
   const [techniciansHydrated, setTechniciansHydrated] = useState(false);
+  const pendingTechWritesRef = useRef<number>(0);
 
   const [categories, setCategories] = useState<ServiceCategory[]>(() => {
     const saved = localStorage.getItem('kormigo_categories');
@@ -309,36 +344,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Persist clean state to localStorage
+  const techniciansRef = useRef<Technician[]>(technicians);
+  const bookingsRef = useRef<Booking[]>(bookings);
+  const reviewsRef = useRef<Review[]>(reviews);
+
   useEffect(() => {
-    localStorage.setItem('kormigo_categories', JSON.stringify(categories));
-  }, [categories]);
-  useEffect(() => {
-    localStorage.setItem('kormigo_technicians', JSON.stringify(technicians));
+    techniciansRef.current = technicians;
   }, [technicians]);
   useEffect(() => {
-    localStorage.setItem('kormigo_bookings', JSON.stringify(bookings));
+    bookingsRef.current = bookings;
   }, [bookings]);
   useEffect(() => {
-    localStorage.setItem('kormigo_notifications', JSON.stringify(notifications));
+    reviewsRef.current = reviews;
+  }, [reviews]);
+
+  // Persist clean state to localStorage safely
+  useEffect(() => {
+    safeSetLocalStorage('kormigo_categories', categories);
+  }, [categories]);
+  useEffect(() => {
+    safeSetTechniciansCache(technicians);
+  }, [technicians]);
+  useEffect(() => {
+    safeSetLocalStorage('kormigo_bookings', bookings);
+  }, [bookings]);
+  useEffect(() => {
+    safeSetLocalStorage('kormigo_notifications', notifications);
   }, [notifications]);
   useEffect(() => {
-    localStorage.setItem('kormigo_favorites', JSON.stringify(favorites));
+    safeSetLocalStorage('kormigo_favorites', favorites);
   }, [favorites]);
   useEffect(() => {
-    localStorage.setItem('kormigo_reviews', JSON.stringify(reviews));
+    safeSetLocalStorage('kormigo_reviews', reviews);
   }, [reviews]);
   useEffect(() => {
-    localStorage.setItem('kormigo_chat', JSON.stringify(chatMessages));
+    safeSetLocalStorage('kormigo_chat', chatMessages);
   }, [chatMessages]);
   useEffect(() => {
-    localStorage.setItem('kormigo_warranties', JSON.stringify(warranties));
+    safeSetLocalStorage('kormigo_warranties', warranties);
   }, [warranties]);
   useEffect(() => {
-    localStorage.setItem('kormigo_reports', JSON.stringify(reports));
+    safeSetLocalStorage('kormigo_reports', reports);
   }, [reports]);
   useEffect(() => {
-    localStorage.setItem('kormigo_reminders', JSON.stringify(maintenanceReminders));
+    safeSetLocalStorage('kormigo_reminders', maintenanceReminders);
   }, [maintenanceReminders]);
 
   // Real-time Firebase Firestore subscriptions across all core collections
@@ -356,6 +405,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const unsubTechs = subscribeToFirestoreTechnicians((remoteTechs) => {
+      if (pendingTechWritesRef.current > 0) return;
       const clean = remoteTechs.filter((t) => !isDummyTechnician(t));
       setTechnicians(clean);
       setTechniciansHydrated(true);
@@ -1463,18 +1513,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const updateTechnicianProfile = (technicianId: string, profileData: Partial<Technician>) => {
-    setTechnicians((prev) =>
-      prev.map((t) => {
-        if (t.id === technicianId) {
-          const updated = { ...t, ...profileData };
-          void saveTechnicianToFirestore(updated);
-          void syncTechnicianToServer(updated).catch(() => {});
-          return updated;
-        }
-        return t;
-      })
+  // Propagate customer avatar/name updates in real time to their submitted reviews
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const targetAvatar = currentUser.avatar || '';
+    const targetName = currentUser.name || '';
+    const staleReviews = reviewsRef.current.filter(
+      (r) =>
+        r.customerId === currentUser.id &&
+        (r.customerAvatar !== targetAvatar || (targetName && r.customerName !== targetName))
     );
+    if (staleReviews.length === 0) return;
+    setReviews((prev) =>
+      prev.map((r) =>
+        r.customerId === currentUser.id
+          ? { ...r, customerAvatar: targetAvatar, customerName: targetName || r.customerName }
+          : r
+      )
+    );
+    staleReviews.forEach((r) => {
+      void updateReviewInFirestore(r.id, {
+        customerAvatar: targetAvatar,
+        ...(targetName ? { customerName: targetName } : {}),
+      });
+    });
+  }, [currentUser?.id, currentUser?.avatar, currentUser?.name]);
+
+  const updateTechnicianProfile = async (
+    technicianId: string,
+    profileData: Partial<Technician>
+  ): Promise<boolean> => {
+    const existing = techniciansRef.current.find((t) => t.id === technicianId);
+    if (!existing) return false;
+    const updatedTech: Technician = { ...existing, ...profileData };
+    const nextList = techniciansRef.current.map((t) =>
+      t.id === technicianId ? updatedTech : t
+    );
+    techniciansRef.current = nextList;
+    safeSetTechniciansCache(nextList);
+    setTechnicians(nextList);
+
+    pendingTechWritesRef.current += 1;
+    let saved = false;
+    try {
+      saved = await saveTechnicianToFirestore(updatedTech);
+      if (!saved) {
+        saved = await updateTechnicianInFirestore(technicianId, profileData);
+      }
+      void syncTechnicianToServer(updatedTech).catch(() => {});
+
+      // Keep active/past bookings in sync with updated technician avatar/name in real time
+      if (profileData.avatar !== undefined || profileData.name !== undefined) {
+        const affectedBookings = bookingsRef.current.filter(
+          (b) =>
+            b.technicianId === technicianId &&
+            ((profileData.avatar !== undefined && b.technicianAvatar !== updatedTech.avatar) ||
+              (profileData.name !== undefined && b.technicianName !== updatedTech.name))
+        );
+        if (affectedBookings.length > 0) {
+          setBookings((prev) =>
+            prev.map((b) =>
+              b.technicianId === technicianId
+                ? {
+                    ...b,
+                    technicianAvatar: updatedTech.avatar || '',
+                    technicianName: updatedTech.name || b.technicianName,
+                  }
+                : b
+            )
+          );
+          affectedBookings.forEach((b) => {
+            void updateBookingInFirestore(b.id, {
+              technicianAvatar: updatedTech.avatar || '',
+              technicianName: updatedTech.name || b.technicianName,
+            });
+          });
+        }
+      }
+    } finally {
+      pendingTechWritesRef.current = Math.max(0, pendingTechWritesRef.current - 1);
+    }
+    return saved;
   };
 
   const deleteTechnician = (technicianId: string) => {
@@ -1556,6 +1675,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteMaintenanceReminder,
         updateTechnicianAvailability,
         verifyTechnicianField,
+        techniciansHydrated,
         registerNewTechnician,
         updateTechnicianProfile,
         deleteTechnician,

@@ -93,18 +93,56 @@ export const AdminDashboard: React.FC = () => {
   const [adminCity, setAdminCity] = useState(currentUser?.city || 'Dhaka');
   const [adminArea, setAdminArea] = useState(currentUser?.area || 'Uttara');
   const [profileToast, setProfileToast] = useState<string | null>(null);
+  const [profileErrorToast, setProfileErrorToast] = useState<string | null>(null);
+  const [savingAdminProfile, setSavingAdminProfile] = useState(false);
 
-  const handleSaveAdminProfile = (e: React.FormEvent) => {
+  const handleAdminAvatarChange = async (nextAvatar: string) => {
+    const cleaned = nextAvatar.trim();
+    setAdminAvatar(cleaned);
+    setProfileErrorToast(null);
+    const saved = await updateProfile({ avatar: cleaned });
+    if (saved) {
+      setProfileToast(
+        cleaned
+          ? isBangla
+            ? 'অ্যাডমিন প্রোফাইল ছবি ডাটাবেসে সংরক্ষিত হয়েছে!'
+            : 'Admin profile photo saved to database!'
+          : isBangla
+          ? 'প্রোফাইল ছবি সরানো হয়েছে।'
+          : 'Profile photo removed.'
+      );
+      setTimeout(() => setProfileToast(null), 3500);
+    } else {
+      setProfileErrorToast(
+        isBangla
+          ? 'ছবি ডাটাবেসে সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।'
+          : 'Could not save photo to database. Please try again.'
+      );
+    }
+  };
+
+  const handleSaveAdminProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile({
+    setSavingAdminProfile(true);
+    setProfileErrorToast(null);
+    const saved = await updateProfile({
       name: adminName.trim(),
       phone: adminPhone.trim(),
       avatar: adminAvatar.trim(),
       city: adminCity.trim(),
       area: adminArea.trim()
     });
-    setProfileToast(isBangla ? 'অ্যাডমিন প্রোফাইল সফলভাবে আপডেট হয়েছে!' : 'Admin profile successfully updated!');
-    setTimeout(() => setProfileToast(null), 4000);
+    setSavingAdminProfile(false);
+    if (saved) {
+      setProfileToast(isBangla ? 'অ্যাডমিন প্রোফাইল সফলভাবে আপডেট হয়েছে!' : 'Admin profile successfully updated!');
+      setTimeout(() => setProfileToast(null), 4000);
+    } else {
+      setProfileErrorToast(
+        isBangla
+          ? 'অ্যাডমিন প্রোফাইল ডাটাবেসে সংরক্ষণ করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।'
+          : 'Could not save admin profile to database. Please try again.'
+      );
+    }
   };
   const [techSearch, setTechSearch] = useState('');
   const [bookingFilterStatus, setBookingFilterStatus] = useState<string>('ALL');
@@ -1267,7 +1305,8 @@ export const AdminDashboard: React.FC = () => {
             <div className="space-y-3">
               <ImageUploader
                 currentImage={adminAvatar}
-                onImageChange={(url) => setAdminAvatar(url)}
+                onImageChange={(url) => void handleAdminAvatarChange(url)}
+                onRemove={() => void handleAdminAvatarChange('')}
                 label={isBangla ? 'অ্যাডমিন প্রোফাইল ছবি আপলোড করুন' : 'Upload Admin Profile Photo'}
                 shape="circle"
               />
@@ -1291,12 +1330,25 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
 
+            {profileErrorToast && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 font-bold">
+                ⚠️ {profileErrorToast}
+              </div>
+            )}
+
             <div className="flex justify-end pt-3">
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black shadow-md cursor-pointer"
+                disabled={savingAdminProfile}
+                className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white font-black shadow-md cursor-pointer"
               >
-                {isBangla ? 'প্রোফাইল পরিবর্তন সংরক্ষণ করুন' : 'Save Profile Changes'}
+                {savingAdminProfile
+                  ? isBangla
+                    ? 'সংরক্ষণ হচ্ছে...'
+                    : 'Saving...'
+                  : isBangla
+                  ? 'প্রোফাইল পরিবর্তন সংরক্ষণ করুন'
+                  : 'Save Profile Changes'}
               </button>
             </div>
           </form>

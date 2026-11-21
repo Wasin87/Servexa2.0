@@ -58,13 +58,14 @@ import {
   recordCashCollectionInFirestore,
   saveExtraChargeToFirestore,
 } from '../services/firestoreFinanceService';
-import { saveNotificationToFirestore } from '../services/firestoreService';
+import { saveNotificationToFirestore, updateUserInFirestore } from '../services/firestoreService';
 import type { AdditionalChargeRequest } from '../types/finance';
 
 export const TechnicianDashboard: React.FC = () => {
   const {
     bookings,
     technicians,
+    techniciansHydrated,
     categories,
     warranties,
     reviews,
@@ -186,6 +187,7 @@ export const TechnicianDashboard: React.FC = () => {
   const [aboutBnInput, setAboutBnInput] = useState(currentTech?.aboutBn || '');
   const [nidFrontInput, setNidFrontInput] = useState(currentTech?.nidFrontImage || '');
   const [nidBackInput, setNidBackInput] = useState(currentTech?.nidBackImage || '');
+  const [savingTechProfile, setSavingTechProfile] = useState(false);
 
   // Skills & Rates Form State
   const [visitingFeeInput, setVisitingFeeInput] = useState(currentTech?.visitingFee || 200);
@@ -203,24 +205,19 @@ export const TechnicianDashboard: React.FC = () => {
   const [portAfterImg, setPortAfterImg] = useState('');
   const [portDescBn, setPortDescBn] = useState('');
 
-  // Auto-select logged-in technician record or auto-provision if missing after initial sync
+  // Auto-select logged-in technician record or auto-provision only after Firestore hydration finishes
   useEffect(() => {
     if (matchedUserTech) {
       setSelectedTechId(matchedUserTech.id);
       return;
     }
-    if (!currentUser || currentUser.role !== 'TECHNICIAN') return;
+    if (!techniciansHydrated || !currentUser || currentUser.role !== 'TECHNICIAN') return;
     if (autoProvisionedRef.current.has(currentUser.id)) return;
 
-    const timer = setTimeout(() => {
-      if (autoProvisionedRef.current.has(currentUser.id)) return;
-      autoProvisionedRef.current.add(currentUser.id);
-      const created = registerNewTechnician(currentUser);
-      setSelectedTechId(created.id);
-    }, 900);
-
-    return () => clearTimeout(timer);
-  }, [currentUser?.id, currentUser?.role, matchedUserTech?.id, registerNewTechnician]);
+    autoProvisionedRef.current.add(currentUser.id);
+    const created = registerNewTechnician(currentUser);
+    setSelectedTechId(created.id);
+  }, [techniciansHydrated, currentUser?.id, currentUser?.role, matchedUserTech?.id, registerNewTechnician]);
 
   // Fetch strictly per-technician periodStats from backend wallet API once JWT session is ready
   useEffect(() => {
@@ -271,12 +268,18 @@ export const TechnicianDashboard: React.FC = () => {
     }
   }, [searchParams, location.pathname, isSkillApproved]);
 
-  // Sync inputs when currentTech updates
+  // Sync inputs when currentTech updates from Firestore or switcher
   useEffect(() => {
     if (currentTech) {
+      const ownTech =
+        currentUser?.id === currentTech.userId ||
+        (currentUser?.role === 'TECHNICIAN' &&
+          !!currentUser?.email &&
+          !!currentTech.email &&
+          currentUser.email.toLowerCase() === currentTech.email.toLowerCase());
       setNameInput(currentTech.name || '');
       setPhoneInput(currentTech.phone || '');
-      setAvatarInput(currentTech.avatar || '');
+      setAvatarInput(currentTech.avatar || (ownTech ? currentUser?.avatar || '' : ''));
       setDivisionInput(currentTech.division || '');
       setDistrictInput(currentTech.district || currentTech.city || '');
       setAreaInput(currentTech.primaryArea || '');
@@ -293,7 +296,18 @@ export const TechnicianDashboard: React.FC = () => {
       setEmergencyAvailableInput(currentTech.emergencyAvailable ?? true);
       setSelectedSkills(currentTech.skills || []);
     }
-  }, [currentTech?.id]);
+  }, [
+    currentTech?.id,
+    currentTech?.avatar,
+    currentTech?.name,
+    currentTech?.phone,
+    currentTech?.division,
+    currentTech?.district,
+    currentTech?.city,
+    currentTech?.primaryArea,
+    currentTech?.nidFrontImage,
+    currentTech?.nidBackImage,
+  ]);
 
   const districtsInDivision = getDistrictsByDivision(divisionInput || undefined);
   const activeDistrictObj = findDistrict(districtInput) || districtsInDivision[0] || BANGLADESH_DISTRICTS[0];
@@ -624,12 +638,64 @@ export const TechnicianDashboard: React.FC = () => {
     }
   };
 
+  const isOwnTechProfile = (tech: Technician) =>
+    !!currentUser &&
+    (currentUser.id === tech.userId ||
+      (currentUser.role === 'TECHNICIAN' &&
+        !!currentUser.email &&
+        !!tech.email &&
+        currentUser.email.toLowerCase() === tech.email.toLowerCase()));
+
+  const handleTechAvatarChange = async (nextAvatar: string) => {
+    if (!currentTech) return;
+    const cleaned = nextAvatar.trim();
+    setAvatarInput(cleaned);
+    const ownProfile = isOwnTechProfile(currentTech);
+    const savedTech = await updateTechnicianProfile(currentTech.id, {
+      avatar: cleaned,
+      ...(ownProfile && currentUser && currentTech.userId !== currentUser.id
+        ? { userId: currentUser.id }
+        : {}),
+    });
+
+    if (ownProfile) {
+      await updateProfile({ avatar: cleaned });
+    } else if (currentTech.userId) {
+      await updateUserInFirestore(currentTech.userId, { avatar: cleaned });
+    }
+
+    if (savedTech) {
+      showToast(
+        cleaned
+          ? isBangla
+            ? 'নতুন প্রোফাইল ছবি ডাটাবেসে সংরক্ষিত হয়েছে!'
+            : 'Profile photo saved to database!'
+          : isBangla
+          ? 'প্রোফাইল ছবি সরানো হয়েছে।'
+          : 'Profile photo removed.',
+        cleaned ? 'success' : 'info'
+      );
+    } else {
+      showToast(
+        isBangla
+          ? 'ডাটাবেসে ছবি সংরক্ষণ করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।'
+          : 'Could not save photo to database. Please try again.',
+        'error'
+      );
+    }
+  };
+
   // 1. SAVE PROFILE HANDLER
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentTech) return;
+    setSavingTechProfile(true);
     const distObj = findDistrict(districtInput);
+    const ownProfile = isOwnTechProfile(currentTech);
     const updatedProfile = {
+      ...(ownProfile && currentUser && currentTech.userId !== currentUser.id
+        ? { userId: currentUser.id }
+        : {}),
       name: nameInput.trim(),
       phone: phoneInput.trim(),
       avatar: avatarInput.trim(),
@@ -647,11 +713,11 @@ export const TechnicianDashboard: React.FC = () => {
       nidFrontImage: nidFrontInput.trim(),
       nidBackImage: nidBackInput.trim()
     };
-    // Update technician record in AppContext
-    updateTechnicianProfile(currentTech.id, updatedProfile);
-    // Update auth user in AuthContext if this technician belongs to currentUser
-    if (currentUser?.id === currentTech.userId) {
-      updateProfile({
+    // Update technician record in AppContext + Firestore
+    const savedTech = await updateTechnicianProfile(currentTech.id, updatedProfile);
+    // Update auth user in AuthContext/Firestore if this technician belongs to currentUser
+    if (ownProfile) {
+      await updateProfile({
         name: nameInput.trim(),
         phone: phoneInput.trim(),
         avatar: avatarInput.trim(),
@@ -660,6 +726,27 @@ export const TechnicianDashboard: React.FC = () => {
         city: districtInput,
         area: areaInput
       });
+    } else if (currentTech.userId) {
+      await updateUserInFirestore(currentTech.userId, {
+        name: nameInput.trim(),
+        phone: phoneInput.trim(),
+        avatar: avatarInput.trim(),
+        division: divisionInput,
+        district: districtInput,
+        city: districtInput,
+        area: areaInput
+      });
+    }
+    setSavingTechProfile(false);
+
+    if (!savedTech) {
+      showToast(
+        isBangla
+          ? 'প্রোফাইল তথ্য ডাটাবেসে সংরক্ষণ করা যায়নি। ছবির সাইজ বা সংযোগ পরীক্ষা করুন।'
+          : 'Could not save profile to database. Check photo size or connection.',
+        'error'
+      );
+      return;
     }
 
     const nextComp = calculateTechnicianCompletion({ ...currentTech, ...updatedProfile });
@@ -1127,7 +1214,7 @@ export const TechnicianDashboard: React.FC = () => {
         portalLabel={isBangla ? 'টেকনিশিয়ান পোর্টাল' : 'Technician Portal'}
         userName={currentTech.name}
         userMeta={`${currentTech.primaryArea ? `${currentTech.primaryArea}, ` : ''}${currentTech.district || currentTech.city || (isBangla ? 'বাংলাদেশ' : 'Bangladesh')} · ★ ${currentTech.rating}`}
-        userAvatar={currentTech.avatar || ''}
+        userAvatar={currentTech.avatar || currentUser?.avatar || ''}
         verifiedLabel={isSkillApproved ? (isBangla ? 'দক্ষতা উত্তীর্ণ' : 'Skill Verified') : (isBangla ? 'অনুমোদন বাকি' : 'Pending Approval')}
         isVerified={isSkillApproved}
         sidebarTopSlot={techSidebarSwitcher}
@@ -2065,8 +2152,8 @@ export const TechnicianDashboard: React.FC = () => {
             {/* Direct Device Image Uploader */}
             <ImageUploader
               currentImage={avatarInput}
-              onImageChange={setAvatarInput}
-              onRemove={() => setAvatarInput('')}
+              onImageChange={(url) => void handleTechAvatarChange(url)}
+              onRemove={() => void handleTechAvatarChange('')}
               showPresets={false}
               label={isBangla ? 'নিজস্ব প্রোফাইল ছবি (ডিভাইস থেকে সরাসরি আপলোড করুন):' : 'Profile Photo (Direct Device Upload):'}
               shape="square"
@@ -2264,10 +2351,19 @@ export const TechnicianDashboard: React.FC = () => {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
-                className="px-6 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs shadow-md shadow-orange-600/20 cursor-pointer flex items-center gap-1.5 active:scale-98"
+                disabled={savingTechProfile}
+                className="px-6 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white font-extrabold text-xs shadow-md shadow-orange-600/20 cursor-pointer flex items-center gap-1.5 active:scale-98"
               >
                 <Check className="w-4 h-4" />
-                <span>{isBangla ? 'বায়োডাটা ও NID তথ্য সংরক্ষণ করুন' : 'Save Biodata & NID'}</span>
+                <span>
+                  {savingTechProfile
+                    ? isBangla
+                      ? 'সংরক্ষণ হচ্ছে...'
+                      : 'Saving...'
+                    : isBangla
+                    ? 'বায়োডাটা ও NID তথ্য সংরক্ষণ করুন'
+                    : 'Save Biodata & NID'}
+                </span>
               </button>
               <button
                 type="button"

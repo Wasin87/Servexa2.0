@@ -124,11 +124,17 @@ export async function initializeFirestoreDatabase(): Promise<{ initialized: bool
 /**
  * Users
  */
-export async function saveUserToFirestore(user: User): Promise<void> {
+export async function saveUserToFirestore(user: User): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'users', user.id), stripUndefined(user), { merge: true });
+    const safeUser: User = {
+      ...user,
+      name: (user.name || 'Servexa User').trim().slice(0, 150) || 'Servexa User',
+    };
+    await setDoc(doc(db, 'users', safeUser.id), stripUndefined(safeUser), { merge: true });
+    return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `users/${user.id}`);
+    return false;
   }
 }
 
@@ -193,11 +199,20 @@ export function subscribeToUserInFirestore(userId: string, onUpdate: (user: User
   );
 }
 
-export async function updateUserInFirestore(userId: string, updates: Partial<User>): Promise<void> {
+export async function updateUserInFirestore(userId: string, updates: Partial<User>): Promise<boolean> {
+  if (!userId) return false;
   try {
-    await updateDoc(doc(db, 'users', userId), stripUndefined(updates));
+    const sanitized: Partial<User> = {
+      ...updates,
+      ...(updates.name !== undefined
+        ? { name: (updates.name || 'Servexa User').trim().slice(0, 150) || 'Servexa User' }
+        : {}),
+    };
+    await updateDoc(doc(db, 'users', userId), stripUndefined(sanitized));
+    return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+    return false;
   }
 }
 
@@ -269,11 +284,37 @@ export function subscribeToFirestoreTechnicians(onUpdate: (techs: Technician[]) 
   );
 }
 
-export async function saveTechnicianToFirestore(tech: Technician): Promise<void> {
+export async function saveTechnicianToFirestore(tech: Technician): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'technicians', tech.id), stripUndefined(tech), { merge: true });
+    const safeTech: Technician = {
+      ...tech,
+      name: (tech.name || 'Technician').trim().slice(0, 150) || 'Technician',
+    };
+    await setDoc(doc(db, 'technicians', safeTech.id), stripUndefined(safeTech), { merge: true });
+    return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `technicians/${tech.id}`);
+    return false;
+  }
+}
+
+export async function updateTechnicianInFirestore(
+  technicianId: string,
+  updates: Partial<Technician>
+): Promise<boolean> {
+  if (!technicianId) return false;
+  try {
+    const sanitized: Partial<Technician> = {
+      ...updates,
+      ...(updates.name !== undefined
+        ? { name: (updates.name || 'Technician').trim().slice(0, 150) || 'Technician' }
+        : {}),
+    };
+    await setDoc(doc(db, 'technicians', technicianId), stripUndefined(sanitized), { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `technicians/${technicianId}`);
+    return false;
   }
 }
 

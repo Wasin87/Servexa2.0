@@ -49,13 +49,15 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     reader.onload = (e) => {
       const result = e.target?.result as string;
       if (result) {
-        // Compress/Resize image in browser canvas to keep localStorage light & fast
+        // Compress/Resize image in browser canvas to stay fast and well within Firestore 1MB doc limits
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const maxDim = 600;
+          const isAvatar = shape === 'circle';
+          const maxDim = isAvatar ? 360 : 560;
+          const maxBase64Length = isAvatar ? 95000 : 140000;
 
           if (width > height) {
             if (width > maxDim) {
@@ -73,8 +75,16 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           if (ctx) {
+            // Fill white background so transparent PNGs render cleanly as JPEG
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            let quality = 0.8;
+            let compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+            while (compressedBase64.length > maxBase64Length && quality > 0.52) {
+              quality -= 0.08;
+              compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+            }
             setPreview(compressedBase64);
             onImageChange(compressedBase64);
           } else {
@@ -93,6 +103,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     if (file) {
       processFile(file);
     }
+    e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent) => {

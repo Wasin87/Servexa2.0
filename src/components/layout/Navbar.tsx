@@ -79,17 +79,21 @@ export const Navbar: React.FC = () => {
   };
 
   const renderUserAvatar = (sizeClasses: string) => {
-    if (currentUser?.avatar) {
+    const resolvedAvatar =
+      currentUser?.role === 'TECHNICIAN'
+        ? myTech?.avatar || currentUser?.avatar || ''
+        : currentUser?.avatar || '';
+    if (resolvedAvatar) {
       return (
         <img
-          src={currentUser.avatar}
-          alt={currentUser.name}
+          src={resolvedAvatar}
+          alt={currentUser?.name || myTech?.name || 'User'}
           className={`${sizeClasses} rounded-full object-cover shrink-0 aspect-square shadow-xs`}
           referrerPolicy="no-referrer"
         />
       );
     }
-    const initials = (currentUser?.name || 'U').slice(0, 2).toUpperCase();
+    const initials = (currentUser?.name || myTech?.name || 'U').slice(0, 2).toUpperCase();
     return (
       <div
         className={`${sizeClasses} rounded-full bg-orange-600 text-white font-bold flex items-center justify-center text-[11px] shrink-0 shadow-xs`}

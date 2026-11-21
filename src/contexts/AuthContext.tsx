@@ -48,7 +48,7 @@ interface AuthContextType {
   loginWithGoogle: (preferredRole?: UserRole) => Promise<AuthActionResult>;
   register: (userData: RegisterInput) => Promise<AuthActionResult>;
   logout: () => void;
-  updateProfile: (updatedData: Partial<User>) => void;
+  updateProfile: (updatedData: Partial<User>) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -91,6 +91,27 @@ function cacheRegisteredUser(user: User) {
       (u) => u.id !== user.id && (u.email || '').toLowerCase() !== (user.email || '').toLowerCase()
     );
     localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify([user, ...existing]));
+  } catch {
+    try {
+      const existingLight = loadRegisteredUsers()
+        .filter(
+          (u) => u.id !== user.id && (u.email || '').toLowerCase() !== (user.email || '').toLowerCase()
+        )
+        .map((u) => ({ ...u, avatar: '' }));
+      localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify([user, ...existingLight]));
+    } catch {
+      // ignore storage errors
+    }
+  }
+}
+
+function safeCacheActiveUser(user: User | null) {
+  try {
+    if (user) {
+      localStorage.setItem('kormigo_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('kormigo_user');
+    }
   } catch {
     // ignore storage errors
   }
@@ -155,6 +176,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authTokenReady, setAuthTokenReady] = useState<boolean>(false);
   const [redirectAuthUser, setRedirectAuthUser] = useState<User | null>(null);
   const sessionSeqRef = useRef<number>(0);
+  const currentUserRef = useRef<User | null>(currentUser);
+  const pendingProfileWritesRef = useRef<number>(0);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   const clearRedirectAuthUser = () => setRedirectAuthUser(null);
 
@@ -184,12 +211,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Always keep active user cache synchronized in localStorage whenever ANY profile field (including avatar) changes
   useEffect(() => {
+    safeCacheActiveUser(currentUser);
     if (currentUser) {
-      localStorage.setItem('kormigo_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('kormigo_user');
+      cacheRegisteredUser(currentUser);
     }
+  }, [currentUser]);
+
+  // Only re-bootstrap backend JWT session when user identity or role changes
+  useEffect(() => {
     void ensureServerSession(currentUser);
   }, [currentUser?.id, currentUser?.role]);
 
@@ -197,12 +228,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!currentUser?.id) return;
     const unsub = subscribeToUserInFirestore(currentUser.id, (remoteUser) => {
       if (!remoteUser) return;
+      if (pendingProfileWritesRef.current > 0) return;
       setCurrentUser((prev) => {
         if (!prev || prev.id !== remoteUser.id) return prev;
         const merged = { ...prev, ...remoteUser };
         if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
         cacheRegisteredUser(merged);
-        localStorage.setItem('kormigo_user', JSON.stringify(merged));
+        safeCacheActiveUser(merged);
         return merged;
       });
     });
@@ -216,7 +248,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const fbEmail = (fbUser.email || '').trim().toLowerCase();
     const isDesignatedAdmin = fbEmail === ADMIN_EMAIL;
 
-    let matchedUser = await getUserFromFirestore(fbUser.uid);
+    let matchedUser = isDesignatedAdmin
+      ? (await getUserFromFirestore('admin-wasin')) ||
+        (await getUserByEmailFromFirestore(ADMIN_EMAIL)) ||
+        (await getUserFromFirestore(fbUser.uid))
+      : await getUserFromFirestore(fbUser.uid);
+
     if (!matchedUser && fbEmail) {
       matchedUser = await getUserByEmailFromFirestore(fbEmail);
     }
@@ -352,8 +389,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const existingAdmin =
-        (await getUserByEmailFromFirestore(ADMIN_EMAIL)) ||
-        (await getUserFromFirestore('admin-wasin'));
+        (await getUserFromFirestore('admin-wasin')) ||
+        (await getUserByEmailFromFirestore(ADMIN_EMAIL));
 
       const adminUser: User = {
         id: existingAdmin?.id || 'admin-wasin',
@@ -372,8 +409,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createdAt: existingAdmin?.createdAt || new Date().toISOString().split('T')[0],
       };
 
+      safeCacheActiveUser(adminUser);
       cacheRegisteredUser(adminUser);
-      void saveUserToFirestore(adminUser);
+      if (!existingAdmin) {
+        await saveUserToFirestore(adminUser);
+      }
       await ensureServerSession(adminUser);
       setCurrentUser(adminUser);
       return { success: true, user: adminUser };
@@ -393,10 +433,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           error: 'ভুল পাসওয়ার্ড! অনুগ্রহ করে রেজিস্ট্রেশনের সময় দেওয়া সঠিক পাসওয়ার্ড লিখুন।',
         };
       }
-      await ensureServerSession(matchedRegistered);
-      setCurrentUser(matchedRegistered);
-      void saveUserToFirestore(matchedRegistered);
-      return { success: true, user: matchedRegistered };
+      // Prefer live Firestore user record so updated profile/avatar from any session is never overwritten by stale local cache
+      const liveFsUser =
+        (await getUserFromFirestore(matchedRegistered.id)) ||
+        (matchedRegistered.email
+          ? await getUserByEmailFromFirestore(matchedRegistered.email)
+          : null);
+      const mergedUser: User = liveFsUser
+        ? {
+            ...matchedRegistered,
+            ...liveFsUser,
+            password: liveFsUser.password || matchedRegistered.password,
+          }
+        : matchedRegistered;
+
+      safeCacheActiveUser(mergedUser);
+      cacheRegisteredUser(mergedUser);
+      if (!liveFsUser) {
+        await saveUserToFirestore(mergedUser);
+      }
+      await ensureServerSession(mergedUser);
+      setCurrentUser(mergedUser);
+      return { success: true, user: mergedUser };
     }
 
     // Query Firebase Firestore by email, phone, or document ID (cross-device Vercel support)
@@ -505,12 +563,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void signOut(auth).catch(() => {});
   };
 
-  const updateProfile = (updatedData: Partial<User>) => {
-    if (currentUser) {
-      const nextUser = { ...currentUser, ...updatedData };
-      setCurrentUser(nextUser);
-      cacheRegisteredUser(nextUser);
-      void saveUserToFirestore(nextUser);
+  const updateProfile = async (updatedData: Partial<User>): Promise<boolean> => {
+    const baseUser = currentUserRef.current || currentUser;
+    if (!baseUser) return false;
+    const nextUser: User = { ...baseUser, ...updatedData };
+    currentUserRef.current = nextUser;
+    safeCacheActiveUser(nextUser);
+    cacheRegisteredUser(nextUser);
+    setCurrentUser(nextUser);
+
+    pendingProfileWritesRef.current += 1;
+    try {
+      return await saveUserToFirestore(nextUser);
+    } finally {
+      pendingProfileWritesRef.current = Math.max(0, pendingProfileWritesRef.current - 1);
     }
   };
 
