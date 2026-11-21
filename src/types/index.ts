@@ -14,7 +14,7 @@ export type BookingStatus =
   | 'CANCELLED'
   | 'DISPUTED';
 
-export type PaymentStatus = 'PENDING' | 'PAID' | 'CASH_ON_SERVICE' | 'REFUNDED';
+export type PaymentStatus = 'PENDING' | 'PENDING_APPROVAL' | 'PAID' | 'CASH_ON_SERVICE' | 'REFUNDED';
 export type PaymentMethod = 'cash' | 'bkash' | 'nagad' | 'rocket' | 'card';
 
 export type WarrantyStatus = 'REQUESTED' | 'APPROVED' | 'ACCEPTED' | 'ON_THE_WAY' | 'RESOLVED' | 'REJECTED';

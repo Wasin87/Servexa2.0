@@ -119,8 +119,8 @@ function getDefaultRules(): PlatformRules {
       requireCustomerExplicitApproval: true,
     },
     walletAndReserve: {
-      globalMinimumReserveBalance: 500,
-      minimumWithdrawalAmount: 100,
+      globalMinimumReserveBalance: 0,
+      minimumWithdrawalAmount: 50,
       maximumWithdrawalAmount: 25000,
       requireCustomerConfirmationForAvailability: false,
       holdEarningsDaysAfterCompletion: 0,
@@ -131,7 +131,7 @@ function getDefaultRules(): PlatformRules {
       withdrawalFeePercent: 0,
       withdrawalFlatFee: 0,
       autoReviewAboveAmount: 10000,
-      requireVerifiedPayoutAccount: true,
+      requireVerifiedPayoutAccount: false,
       allowedPayoutProviders: {
         bkash: true,
         nagad: true,
@@ -1022,37 +1022,22 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
       method: payMethod,
       amount,
       currency: 'BDT',
-      status: 'VERIFIED',
+      status: 'PENDING_ADMIN_APPROVAL',
       providerTxId,
-      providerStatus: 'SANDBOX_COMPLETED',
+      providerStatus: 'IN_ADMIN_ESCROW',
       providerMode: 'SANDBOX',
       idempotencyKey: body.idempotencyKey || `${bId}-${Date.now()}`,
       createdAt: now,
-      verifiedAt: now,
       refundedAmount: 0,
     };
     state.paymentTransactions.unshift(tx);
-    const techShare = Math.round(amount * 0.9);
-    state.ledgerEntries.unshift({
-      id: `led-pay-${Date.now()}`,
-      technicianId: tx.technicianId,
-      bookingId: bId,
-      paymentTxId: tx.id,
-      entryType: 'EARNING_AVAILABLE',
-      amount: techShare,
-      direction: 'CREDIT',
-      description: `Demo ${payMethod.toUpperCase()} payment settled for #${booking?.bookingNumber || bId}`,
-      referenceKey: `pay-${tx.id}`,
-      createdBy: 'payment-demo',
-      createdAt: now,
-    });
     saveState(state);
     return {
       transaction: tx,
       configured: true,
       mode: 'SANDBOX',
       missingEnvVars: [],
-      message: `Demo ${payMethod.toUpperCase()} sandbox payment verified (${providerTxId}).`,
+      message: `Demo ${payMethod.toUpperCase()} payment held in Admin Escrow (${providerTxId}) pending approval.`,
     } as T;
   }
 
@@ -1393,6 +1378,59 @@ export async function handleLocalFinanceFallback<T>(url: string, options: Reques
     const prev = state.techRestrictions[techId] || { restricted: false, reason: null, customReserveBalance: null };
     state.techRestrictions[techId] = { ...prev, customReserveBalance: body.customReserveBalance ?? null };
     saveState(state);
+    return { success: true } as T;
+  }
+
+  if (path.startsWith('/api/admin/payments/') && path.endsWith('/decide') && method === 'POST') {
+    const txId = decodeURIComponent(path.replace('/api/admin/payments/', '').replace('/decide', ''));
+    const decision = body.decision as 'APPROVE' | 'REJECT';
+    const target = state.paymentTransactions.find((t) => t.id === txId);
+    if (target) {
+      if (decision === 'APPROVE' && target.status !== 'VERIFIED') {
+        state.paymentTransactions = state.paymentTransactions.map((t) =>
+          t.id === txId
+            ? { ...t, status: 'VERIFIED', providerStatus: 'ADMIN_ACCEPTED', verifiedAt: now }
+            : t
+        );
+        const techShare = Math.round(target.amount * 0.9);
+        const commAmt = target.amount - techShare;
+        state.ledgerEntries.unshift(
+          {
+            id: `led-pay-${Date.now()}`,
+            technicianId: target.technicianId,
+            bookingId: target.bookingId,
+            paymentTxId: target.id,
+            entryType: 'EARNING_AVAILABLE',
+            amount: techShare,
+            direction: 'CREDIT',
+            description: `৯০% আয় জমা — অনলাইন পেমেন্ট গৃহীত (#${target.bookingId})`,
+            referenceKey: `pay-avail-${target.id}`,
+            createdBy: session.userId,
+            createdAt: now,
+          },
+          {
+            id: `led-comm-${Date.now() + 1}`,
+            technicianId: target.technicianId,
+            bookingId: target.bookingId,
+            paymentTxId: target.id,
+            entryType: 'COMMISSION_DEDUCTED',
+            amount: commAmt,
+            direction: 'DEBIT',
+            description: `Servexa ১০% কমিশন (#${target.bookingId})`,
+            referenceKey: `pay-comm-${target.id}`,
+            createdBy: session.userId,
+            createdAt: now,
+          }
+        );
+      } else if (decision === 'REJECT') {
+        state.paymentTransactions = state.paymentTransactions.map((t) =>
+          t.id === txId
+            ? { ...t, status: 'REJECTED', providerStatus: 'ADMIN_REJECTED', failureReason: body.note || 'Rejected by Admin' }
+            : t
+        );
+      }
+      saveState(state);
+    }
     return { success: true } as T;
   }
 

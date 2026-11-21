@@ -16,12 +16,25 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import {
   addPayoutAccount,
   fetchWalletDashboard,
+  getStoredAuthToken,
   requestWithdrawal,
   submitCashDepositReference,
   syncServerSession,
 } from '../../services/financeApi';
+import {
+  addPayoutAccountToFirestore,
+  computeWalletFromFirestoreRecords,
+  requestWithdrawalInFirestore,
+  submitCashDepositInFirestore,
+  subscribeToCashCollections,
+  subscribeToFinanceTransactions,
+  subscribeToPayoutAccounts,
+  subscribeToWalletLedger,
+  subscribeToWithdrawals,
+} from '../../services/firestoreFinanceService';
 import type {
   CashCollectionRecord,
+  PaymentTransaction,
   PayoutAccount,
   PayoutProvider,
   WalletLedgerEntry,
@@ -36,12 +49,19 @@ interface Props {
 export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
   const { authTokenReady, currentUser } = useAuth();
   const { isBangla } = useLanguage();
-  const [wallet, setWallet] = useState<WalletSummary | null>(null);
+  const [serverWallet, setServerWallet] = useState<WalletSummary | null>(null);
   const [policy, setPolicy] = useState<any>(null);
-  const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
-  const [payoutAccounts, setPayoutAccounts] = useState<PayoutAccount[]>([]);
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
-  const [cashCollections, setCashCollections] = useState<CashCollectionRecord[]>([]);
+  const [serverLedger, setServerLedger] = useState<WalletLedgerEntry[]>([]);
+  const [serverPayoutAccounts, setServerPayoutAccounts] = useState<PayoutAccount[]>([]);
+  const [serverWithdrawals, setServerWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [serverCashCollections, setServerCashCollections] = useState<CashCollectionRecord[]>([]);
+
+  // Real-time Firestore state
+  const [fsLedger, setFsLedger] = useState<WalletLedgerEntry[]>([]);
+  const [fsPayoutAccounts, setFsPayoutAccounts] = useState<PayoutAccount[]>([]);
+  const [fsWithdrawals, setFsWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [fsCashCollections, setFsCashCollections] = useState<CashCollectionRecord[]>([]);
+  const [fsEscrowTxs, setFsEscrowTxs] = useState<PaymentTransaction[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -59,7 +79,7 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
 
   // Withdrawal Request Form
   const [selectedAcctId, setSelectedAcctId] = useState('');
-  const [withdrawAmount, setWithdrawAmount] = useState<number>(500);
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(100);
   const [withdrawing, setWithdrawing] = useState(false);
 
   // Cash Deposit Reference Form per collectionId
@@ -149,21 +169,39 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
       }
       const targetParam = currentUser?.role === 'ADMIN' ? technicianId : undefined;
       const data = await fetchWalletDashboard(targetParam);
-      setWallet(data.wallet);
+      setServerWallet(data.wallet);
       setPolicy(data.reservePolicy);
-      setLedger(data.ledgerEntries || []);
-      setPayoutAccounts(data.payoutAccounts || []);
-      setWithdrawals(data.withdrawals || []);
-      setCashCollections(data.cashCollections || []);
-      const verified = (data.payoutAccounts || []).find((a) => a.verificationStatus === 'VERIFIED');
-      if (verified) setSelectedAcctId(verified.id);
-      else if (data.payoutAccounts?.[0]) setSelectedAcctId(data.payoutAccounts[0].id);
+      setServerLedger(data.ledgerEntries || []);
+      setServerPayoutAccounts(data.payoutAccounts || []);
+      setServerWithdrawals(data.withdrawals || []);
+      setServerCashCollections(data.cashCollections || []);
     } catch (err: any) {
-      setErrorMsg(err?.message || (isBangla ? 'ওয়ালেট লেজার লোড করা যায়নি।' : 'Failed to load wallet ledger.'));
+      // Firestore real-time state still operates seamlessly even if Express fails
+      if (!fsLedger.length && !fsPayoutAccounts.length) {
+        setErrorMsg(err?.message || null);
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!technicianId) return;
+    const unsubLedger = subscribeToWalletLedger(setFsLedger, technicianId);
+    const unsubWithdrawals = subscribeToWithdrawals(setFsWithdrawals, technicianId);
+    const unsubAccounts = subscribeToPayoutAccounts(setFsPayoutAccounts, technicianId);
+    const unsubCash = subscribeToCashCollections(setFsCashCollections, technicianId);
+    const unsubTx = subscribeToFinanceTransactions((allTxs) => {
+      setFsEscrowTxs(allTxs.filter((tx) => tx.technicianId === technicianId));
+    });
+    return () => {
+      unsubLedger();
+      unsubWithdrawals();
+      unsubAccounts();
+      unsubCash();
+      unsubTx();
+    };
+  }, [technicianId]);
 
   useEffect(() => {
     if (!authTokenReady || !currentUser) {
@@ -173,19 +211,74 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
     void loadWallet();
   }, [technicianId, authTokenReady, currentUser?.id]);
 
+  // Merge Firestore real-time records with any Express-only records
+  const ledger = [
+    ...fsLedger,
+    ...serverLedger.filter((sl) => !fsLedger.some((fl) => fl.id === sl.id)),
+  ].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+  const payoutAccounts = [
+    ...fsPayoutAccounts,
+    ...serverPayoutAccounts.filter((sa) => !fsPayoutAccounts.some((fa) => fa.id === sa.id)),
+  ];
+
+  const withdrawals = [
+    ...fsWithdrawals,
+    ...serverWithdrawals.filter((sw) => !fsWithdrawals.some((fw) => fw.id === sw.id)),
+  ].sort((a, b) => new Date(b.requestedAt || 0).getTime() - new Date(a.requestedAt || 0).getTime());
+
+  const cashCollections = [
+    ...fsCashCollections,
+    ...serverCashCollections.filter((sc) => !fsCashCollections.some((fc) => fc.id === sc.id)),
+  ];
+
+  const hasFirestoreFinance =
+    fsLedger.length > 0 || fsWithdrawals.length > 0 || fsCashCollections.length > 0;
+  const customReserve = serverWallet?.customReserveBalance ?? 0;
+  const wallet: WalletSummary | null = hasFirestoreFinance
+    ? computeWalletFromFirestoreRecords(
+        technicianId,
+        ledger,
+        withdrawals,
+        cashCollections,
+        customReserve
+      )
+    : serverWallet ||
+      computeWalletFromFirestoreRecords(technicianId, ledger, withdrawals, cashCollections, 0);
+
+  useEffect(() => {
+    if (!selectedAcctId && payoutAccounts.length > 0) {
+      const verified = payoutAccounts.find((a) => a.verificationStatus === 'VERIFIED');
+      setSelectedAcctId((verified || payoutAccounts[0]).id);
+    }
+  }, [payoutAccounts.length, selectedAcctId]);
+
+  const minWithdrawal = Math.min(50, policy?.minimumWithdrawalAmount || 50);
+
   const handleAddPayoutAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     try {
-      await addPayoutAccount(newAcct);
+      const acct = await addPayoutAccountToFirestore({
+        technicianId,
+        technicianName: currentUser?.name || 'Technician',
+        provider: newAcct.provider,
+        accountTitle: newAcct.accountTitle,
+        accountNumber: newAcct.accountNumber,
+        bankName: newAcct.bankName,
+        branchName: newAcct.branchName,
+      });
+      setSelectedAcctId(acct.id);
+      if (getStoredAuthToken()) {
+        void addPayoutAccount(newAcct).catch(() => {});
+      }
       setShowAddAccount(false);
       setNewAcct({ provider: 'bkash', accountTitle: '', accountNumber: '', bankName: '', branchName: '' });
       notify(
         isBangla
-          ? 'পেআউট অ্যাকাউন্টটি অ্যাডমিন KYC যাচাইয়ের জন্য পাঠানো হয়েছে।'
-          : 'Payout account submitted for Admin KYC verification.'
+          ? 'পেআউট অ্যাকাউন্টটি সংরক্ষণ ও অ্যাডমিন KYC-র জন্য পাঠানো হয়েছে!'
+          : 'Payout account saved & submitted for Admin KYC verification!'
       );
-      void loadWallet();
     } catch (err: any) {
       setErrorMsg(err?.message || (isBangla ? 'পেআউট অ্যাকাউন্ট যোগ করা যায়নি।' : 'Failed to add payout account.'));
     }
@@ -193,28 +286,42 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
 
   const handleRequestWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedAcctId) {
-      setErrorMsg(isBangla ? 'অনুগ্রহ করে একটি ভেরিফায়েড পেআউট অ্যাকাউন্ট নির্বাচন করুন।' : 'Please select a verified payout account.');
+    const chosenAcct = payoutAccounts.find((a) => a.id === selectedAcctId) || payoutAccounts[0];
+    if (!chosenAcct) {
+      setErrorMsg(
+        isBangla
+          ? 'উত্তোলনের আগে অনুগ্রহ করে নিচে থেকে অন্তত একটি পেআউট অ্যাকাউন্ট (bKash/Nagad/Bank) যোগ করুন।'
+          : 'Please add at least one payout account first.'
+      );
       return;
     }
     setWithdrawing(true);
     setErrorMsg(null);
     try {
-      await requestWithdrawal({
-        payoutAccountId: selectedAcctId,
+      await requestWithdrawalInFirestore({
+        technicianId,
+        technicianName: currentUser?.name || 'Technician',
+        payoutAccount: chosenAcct,
         amount: withdrawAmount,
-        idempotencyKey: `${technicianId}-${Date.now()}`,
+        withdrawableBalance: wallet?.withdrawableBalance || 0,
+        minWithdrawal,
       });
+      if (getStoredAuthToken()) {
+        void requestWithdrawal({
+          payoutAccountId: chosenAcct.id,
+          amount: withdrawAmount,
+          idempotencyKey: `${technicianId}-${Date.now()}`,
+        }).catch(() => {});
+      }
       notify(
         isBangla
-          ? `৳${withdrawAmount} উত্তোলনের আবেদন জমা হয়েছে এবং লেজারে সংরক্ষিত হয়েছে!`
-          : `Withdrawal request of ৳${withdrawAmount} submitted & reserved in ledger!`
+          ? `৳${withdrawAmount} উত্তোলনের আবেদন রিয়েল-টাইমে অ্যাডমিনের কাছে পাঠানো হয়েছে!`
+          : `Withdrawal request of ৳${withdrawAmount} submitted live to Admin!`
       );
-      void loadWallet();
     } catch (err: any) {
       setErrorMsg(
         err?.message ||
-          (isBangla ? 'রিজার্ভ ও সীমা যাচাইয়ের কারণে উত্তোলনের আবেদন ব্যর্থ হয়েছে।' : 'Withdrawal rejected by reserve/limit validation.')
+          (isBangla ? 'ব্যালেন্স বা সীমা যাচাইয়ের কারণে উত্তোলনের আবেদন ব্যর্থ হয়েছে।' : 'Withdrawal rejected by balance/limit check.')
       );
     } finally {
       setWithdrawing(false);
@@ -224,24 +331,34 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
   const handleSubmitCashDeposit = async (cc: CashCollectionRecord) => {
     const channel = depositChannel[cc.id] || 'bkash_merchant';
     const ref = (depositRef[cc.id] || '').trim();
+    if (!ref) {
+      setErrorMsg(isBangla ? 'অনুগ্রহ করে ডিপোজিট TrxID লিখুন।' : 'Please enter a deposit TrxID.');
+      return;
+    }
     setErrorMsg(null);
     try {
-      await submitCashDepositReference({
-        cashCollectionId: cc.id,
-        channel,
-        depositReference: ref,
-        amountDeposited: cc.amountCollected,
-      });
+      await submitCashDepositInFirestore(cc, channel, ref, cc.amountCollected);
+      if (getStoredAuthToken()) {
+        void submitCashDepositReference({
+          cashCollectionId: cc.id,
+          channel,
+          depositReference: ref,
+          amountDeposited: cc.amountCollected,
+        }).catch(() => {});
+      }
       notify(
         isBangla
-          ? `ক্যাশ ডিপোজিট রেফারেন্স "${ref}" অ্যাডমিন যাচাইয়ের জন্য পাঠানো হয়েছে!`
-          : `Cash deposit reference "${ref}" submitted for Admin reconciliation!`
+          ? `ক্যাশ ডিপোজিট রেফারেন্স "${ref}" রিয়েল-টাইমে অ্যাডমিনের কাছে পাঠানো হয়েছে!`
+          : `Cash deposit reference "${ref}" submitted live for Admin reconciliation!`
       );
-      void loadWallet();
     } catch (err: any) {
       setErrorMsg(err?.message || (isBangla ? 'ডিপোজিট রেফারেন্স জমা দেওয়া যায়নি।' : 'Deposit reference submission failed.'));
     }
   };
+
+  const pendingEscrowTxs = fsEscrowTxs.filter(
+    (tx) => tx.status === 'PENDING_ADMIN_APPROVAL' || tx.status === 'PENDING'
+  );
 
   if (loading && !wallet) {
     return (
@@ -405,6 +522,53 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
         </div>
       )}
 
+      {/* Pending Online Escrow Payments Awaiting Admin Approval */}
+      {pendingEscrowTxs.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50 space-y-2.5 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="font-extrabold text-blue-900 dark:text-blue-200 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+              <span>
+                {isBangla
+                  ? 'অ্যাডমিন অনুমোদনের অপেক্ষায় থাকা অনলাইন পেমেন্ট (৯০% আপনার ওয়ালেটে আসবে)'
+                  : 'Incoming Online Payments Awaiting Admin Acceptance (90% Share)'}
+              </span>
+            </h4>
+            <span className="font-mono font-bold text-blue-700 dark:text-blue-300 tabular-nums">
+              {pendingEscrowTxs.length}{isBangla ? 'টি' : ' pending'}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {pendingEscrowTxs.map((tx) => {
+              const techShare = tx.technicianAmount ?? Math.round(tx.amount * 0.9);
+              return (
+                <div
+                  key={tx.id}
+                  className="p-3 rounded-xl bg-white dark:bg-zinc-900 border border-blue-200/80 dark:border-blue-900/40 flex flex-wrap items-center justify-between gap-2"
+                >
+                  <div>
+                    <div className="font-bold text-zinc-900 dark:text-white">
+                      #{tx.bookingNumber || tx.bookingId} · {tx.customerName || 'Customer'} ({tx.bankOrProviderName || tx.method.toUpperCase()})
+                    </div>
+                    <div className="text-[11px] text-zinc-500 font-mono">
+                      TxID: {tx.providerTxId || tx.id} · {isBangla ? 'মোট:' : 'Total:'} ৳{tx.amount}
+                    </div>
+                  </div>
+                  <div className="text-right tabular-nums">
+                    <div className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                      +৳{techShare} (90%)
+                    </div>
+                    <div className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                      {isBangla ? 'অ্যাডমিন একসেপ্টের অপেক্ষায়' : 'Awaiting Admin Accept'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Cash-on-Completion Collections Requiring Deposit */}
       {cashCollections.length > 0 && (
         <div className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-3 sm:space-y-4 text-xs">
@@ -531,15 +695,15 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
             </label>
             <input
               type="number"
-              min={policy?.minimumWithdrawalAmount || 100}
+              min={minWithdrawal}
               value={withdrawAmount}
               onChange={(e) => setWithdrawAmount(Number(e.target.value))}
-              className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-stone-50 dark:bg-zinc-800 font-black text-sm"
+              className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-stone-50 dark:bg-zinc-800 font-black text-sm tabular-nums"
             />
           </div>
           <button
             type="submit"
-            disabled={withdrawing || !wallet || wallet.withdrawableBalance < (policy?.minimumWithdrawalAmount || 100)}
+            disabled={withdrawing || !wallet || wallet.withdrawableBalance < minWithdrawal}
             className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:bg-zinc-400 text-white font-black cursor-pointer"
           >
             {withdrawing

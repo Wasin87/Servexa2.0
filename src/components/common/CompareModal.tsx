@@ -79,11 +79,17 @@ export const CompareModal: React.FC<CompareModalProps> = ({ isOpen, onClose }) =
                     <div>
                       {/* Avatar & Name */}
                       <div className="flex items-center gap-3 mb-4">
-                        <img
-                          src={tech.avatar}
-                          alt={tech.name}
-                          className="w-14 h-14 rounded-full object-cover border-2 border-orange-500 shadow-xs"
-                        />
+                        {tech.avatar?.trim() ? (
+                          <img
+                            src={tech.avatar}
+                            alt={tech.name}
+                            className="w-14 h-14 rounded-full object-cover border-2 border-orange-500 shadow-xs shrink-0"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-full bg-orange-600 text-white font-black text-lg flex items-center justify-center border-2 border-orange-500 shadow-xs shrink-0">
+                            {(tech.name || 'T').charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <div>
                           <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
                             {tech.name}

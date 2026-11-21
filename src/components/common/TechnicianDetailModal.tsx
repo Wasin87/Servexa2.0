@@ -211,12 +211,18 @@ export const TechnicianDetailModal: React.FC<TechnicianDetailModalProps> = ({
             {/* Profile Avatar & Primary Badges */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 pr-24">
               <div className="relative shrink-0">
-                <img
-                  src={technician.avatar}
-                  alt={technician.name}
-                  className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl object-cover border-2 border-white shadow-xl"
-                  referrerPolicy="no-referrer"
-                />
+                {technician.avatar?.trim() ? (
+                  <img
+                    src={technician.avatar}
+                    alt={technician.name}
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl object-cover border-2 border-white shadow-xl"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-orange-600 text-white font-black text-2xl sm:text-3xl flex items-center justify-center border-2 border-white shadow-xl">
+                    {(technician.name || 'T').charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <span
                   className={`absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-white dark:border-zinc-900 ${
                     technician.availability === 'available'

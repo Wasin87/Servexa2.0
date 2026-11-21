@@ -58,6 +58,10 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, type = 'bookin
         dotColor = 'bg-emerald-500';
         textColor = 'text-emerald-700 dark:text-emerald-400 font-medium';
         break;
+      case 'PENDING_APPROVAL':
+        dotColor = 'bg-blue-500 animate-pulse';
+        textColor = 'text-blue-700 dark:text-blue-400 font-medium';
+        break;
       case 'PENDING':
       case 'CASH_ON_SERVICE':
         dotColor = 'bg-amber-500';

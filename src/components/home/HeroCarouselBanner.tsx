@@ -203,11 +203,13 @@ export const HeroCarouselBanner: React.FC = () => {
 
           {/* Right Side Photo - 100% Visible & Responsive on Mobile & Desktop */}
           <div className="absolute top-0 right-0 bottom-0 w-2/5 sm:w-5/12 md:w-2/5 overflow-hidden">
-            <img
-              src={currentSlide.image}
-              alt={currentSlide.titleEn}
-              className="w-full h-full object-cover object-center shadow-2xl transition-transform duration-500"
-            />
+            {currentSlide.image?.trim() ? (
+              <img
+                src={currentSlide.image}
+                alt={currentSlide.titleEn}
+                className="w-full h-full object-cover object-center shadow-2xl transition-transform duration-500"
+              />
+            ) : null}
             {/* Left Edge Smooth Vignette for Seamless Text Overlay */}
             <div className="absolute top-0 bottom-0 left-0 w-12 sm:w-24 bg-gradient-to-r from-orange-100/90 via-amber-50/40 to-transparent dark:from-zinc-950 dark:via-zinc-900/60 dark:to-transparent" />
           </div>

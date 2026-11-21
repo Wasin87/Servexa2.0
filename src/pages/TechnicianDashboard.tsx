@@ -54,6 +54,8 @@ import { AvailabilityStatus, Booking, Invoice, PortfolioItem, Technician, Warran
 import { TechnicianPricingSection } from '../components/technician/TechnicianPricingSection';
 import { TechnicianWalletSection } from '../components/technician/TechnicianWalletSection';
 import { collectCashOnCompletion, fetchWalletDashboard, getStoredAuthToken, submitExtraChargeRequest, updateServerBookingStatus } from '../services/financeApi';
+import { recordCashCollectionInFirestore } from '../services/firestoreFinanceService';
+import { saveNotificationToFirestore } from '../services/firestoreService';
 import type { AdditionalChargeRequest } from '../types/finance';
 
 export const TechnicianDashboard: React.FC = () => {
@@ -486,8 +488,11 @@ export const TechnicianDashboard: React.FC = () => {
     e.preventDefault();
     if (!invoiceModalBooking || !currentTech) return;
 
+    const visitingFee = invoiceModalBooking.estimatedVisitingFee || currentTech.visitingFee || 200;
+    const computedTotal = Math.max(0, visitingFee + labourCostInput + partsCostInput - discountInput);
+
     generateInvoice(invoiceModalBooking.id, {
-      visitingFee: invoiceModalBooking.estimatedVisitingFee || currentTech.visitingFee || 200,
+      visitingFee,
       labourCost: labourCostInput,
       partsCost: partsCostInput,
       discount: discountInput,
@@ -495,8 +500,14 @@ export const TechnicianDashboard: React.FC = () => {
       paymentStatus: paymentMethodInput === 'cash' ? 'CASH_ON_SERVICE' : 'PAID'
     });
 
-    if (paymentMethodInput === 'cash' && getStoredAuthToken()) {
-      void collectCashOnCompletion(invoiceModalBooking.id).catch(() => {});
+    if (paymentMethodInput === 'cash') {
+      void recordCashCollectionInFirestore({
+        ...invoiceModalBooking,
+        finalTotal: computedTotal,
+      }).catch(() => {});
+      if (getStoredAuthToken()) {
+        void collectCashOnCompletion(invoiceModalBooking.id).catch(() => {});
+      }
     } else if (getStoredAuthToken()) {
       void updateServerBookingStatus(
         invoiceModalBooking.id,
@@ -523,6 +534,38 @@ export const TechnicianDashboard: React.FC = () => {
         reason: extraChargeReason.trim(),
         receiptNote: extraChargeReceipt.trim() || undefined,
       });
+
+      const nowIso = new Date().toISOString();
+      if (extraChargeBooking.customerId) {
+        void saveNotificationToFirestore({
+          id: `notif-xchg-cust-${Date.now()}`,
+          userId: extraChargeBooking.customerId,
+          role: 'CUSTOMER',
+          titleEn: `Extra Charge Request (৳${extraChargeAmount})`,
+          titleBn: `অতিরিক্ত কাজের/মালামাল চার্জের অনুরোধ (৳${extraChargeAmount})`,
+          messageEn: `${currentTech?.name || 'Technician'} requested ৳${extraChargeAmount} for "${extraChargeReason.trim()}" on #${extraChargeBooking.bookingNumber}. Please review & approve.`,
+          messageBn: `${currentTech?.name || 'টেকনিশিয়ান'} বুকিং #${extraChargeBooking.bookingNumber}-এ "${extraChargeReason.trim()}" বাবদ ৳${extraChargeAmount} অতিরিক্ত চার্জ অনুমোদনের জন্য পাঠিয়েছেন।`,
+          type: 'payment',
+          link: `/booking/${extraChargeBooking.id}`,
+          isRead: false,
+          createdAt: nowIso,
+        }).catch(() => {});
+      }
+
+      void saveNotificationToFirestore({
+        id: `notif-xchg-adm-${Date.now() + 1}`,
+        userId: 'ADMIN_BROADCAST',
+        role: 'ADMIN',
+        titleEn: `Technician Requested Extra Charge`,
+        titleBn: `টেকনিশিয়ান অতিরিক্ত চার্জ অনুরোধ করেছেন`,
+        messageEn: `${currentTech?.name || 'Technician'} requested ৳${extraChargeAmount} on #${extraChargeBooking.bookingNumber} (${extraChargeReason.trim()}).`,
+        messageBn: `${currentTech?.name || 'টেকনিশিয়ান'} বুকিং #${extraChargeBooking.bookingNumber}-এ ৳${extraChargeAmount} অতিরিক্ত চার্জ দাবি করেছেন।`,
+        type: 'payment',
+        link: '/admin/dashboard',
+        isRead: false,
+        createdAt: nowIso,
+      }).catch(() => {});
+
       setExtraChargeBooking(null);
       setExtraChargeReason('');
       setExtraChargeReceipt('');

@@ -69,8 +69,8 @@ export const DEFAULT_PLATFORM_RULES: PlatformRules = {
     requireCustomerExplicitApproval: true,
   },
   walletAndReserve: {
-    globalMinimumReserveBalance: 500,
-    minimumWithdrawalAmount: 500,
+    globalMinimumReserveBalance: 0,
+    minimumWithdrawalAmount: 50,
     maximumWithdrawalAmount: 25000,
     requireCustomerConfirmationForAvailability: false,
     holdEarningsDaysAfterCompletion: 0,
@@ -81,7 +81,7 @@ export const DEFAULT_PLATFORM_RULES: PlatformRules = {
     withdrawalFeePercent: 0,
     withdrawalFlatFee: 0,
     autoReviewAboveAmount: 10000,
-    requireVerifiedPayoutAccount: true,
+    requireVerifiedPayoutAccount: false,
     allowedPayoutProviders: {
       bkash: true,
       nagad: true,

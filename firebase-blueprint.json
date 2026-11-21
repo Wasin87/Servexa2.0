@@ -221,6 +221,85 @@
         "active": { "type": "boolean" }
       },
       "required": ["id", "customerId", "categoryId", "titleEn", "frequencyMonths"]
+    },
+    "FinanceTransaction": {
+      "title": "FinanceTransaction",
+      "description": "Real-time customer online banking / MFS payment escrow transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "bookingNumber": { "type": "string", "maxLength": 64 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 150 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "technicianName": { "type": "string", "maxLength": 150 },
+        "method": { "type": "string", "maxLength": 30 },
+        "amount": { "type": "number" },
+        "commissionAmount": { "type": "number" },
+        "technicianAmount": { "type": "number" },
+        "status": { "type": "string", "maxLength": 40 },
+        "providerTxId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "bookingId", "customerId", "technicianId", "method", "amount", "status"]
+    },
+    "WalletLedgerEntry": {
+      "title": "WalletLedgerEntry",
+      "description": "Append-only technician wallet ledger entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "entryType": { "type": "string", "maxLength": 40 },
+        "amount": { "type": "number" },
+        "direction": { "type": "string", "maxLength": 20 },
+        "referenceKey": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "technicianId", "entryType", "amount", "direction"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Real-time technician payout withdrawal request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "payoutAccountId": { "type": "string", "maxLength": 128 },
+        "provider": { "type": "string", "maxLength": 30 },
+        "requestedAmount": { "type": "number" },
+        "status": { "type": "string", "maxLength": 30 },
+        "requestedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "technicianId", "payoutAccountId", "requestedAmount", "status"]
+    },
+    "PayoutAccount": {
+      "title": "PayoutAccount",
+      "description": "Technician payout bank or MFS account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "provider": { "type": "string", "maxLength": 30 },
+        "accountTitle": { "type": "string", "maxLength": 150 },
+        "accountNumber": { "type": "string", "maxLength": 64 },
+        "verificationStatus": { "type": "string", "maxLength": 30 }
+      },
+      "required": ["id", "technicianId", "provider", "accountNumber", "verificationStatus"]
+    },
+    "CashCollectionRecord": {
+      "title": "CashCollectionRecord",
+      "description": "Cash-on-completion collection and deposit reconciliation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "amountCollected": { "type": "number" },
+        "status": { "type": "string", "maxLength": 40 }
+      },
+      "required": ["id", "bookingId", "technicianId", "amountCollected", "status"]
     }
   },
   "firestore": {
@@ -263,6 +342,26 @@
     "/maintenanceReminders/{reminderId}": {
       "schema": "MaintenanceReminder",
       "description": "Customer maintenance reminders"
+    },
+    "/financeTransactions/{txId}": {
+      "schema": "FinanceTransaction",
+      "description": "Real-time online banking and MFS escrow transactions"
+    },
+    "/walletLedger/{entryId}": {
+      "schema": "WalletLedgerEntry",
+      "description": "Real-time technician wallet ledger entries"
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "WithdrawalRequest",
+      "description": "Real-time technician withdrawal requests"
+    },
+    "/payoutAccounts/{accountId}": {
+      "schema": "PayoutAccount",
+      "description": "Real-time technician payout accounts"
+    },
+    "/cashCollections/{collectionId}": {
+      "schema": "CashCollectionRecord",
+      "description": "Real-time cash on completion collections"
     }
   }
 }

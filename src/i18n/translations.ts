@@ -154,6 +154,7 @@ export const translations = {
     // Payment statuses
     payment: {
       PENDING: 'বকেয়া',
+      PENDING_APPROVAL: 'অ্যাডমিন যাচাইাধীন',
       PAID: 'পরিশোধিত',
       CASH_ON_SERVICE: 'ক্যাশ অন সার্ভিস',
       REFUNDED: 'রিফান্ডকৃত',
@@ -480,6 +481,7 @@ export const translations = {
     // Payment statuses
     payment: {
       PENDING: 'Pending',
+      PENDING_APPROVAL: 'Pending Approval',
       PAID: 'Paid',
       CASH_ON_SERVICE: 'Cash on Service',
       REFUNDED: 'Refunded',

@@ -54,12 +54,16 @@ export const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
       onTouchMove={handleTouchMove}
     >
       {/* After image (Base layer) */}
-      <img
-        src={afterImage}
-        alt={aLabel}
-        className="absolute inset-0 w-full h-full object-cover"
-        loading="lazy"
-      />
+      {afterImage?.trim() ? (
+        <img
+          src={afterImage}
+          alt={aLabel}
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div className="absolute inset-0 bg-zinc-200 dark:bg-zinc-800" />
+      )}
       <div className="absolute top-3 right-3 bg-zinc-900/80 backdrop-blur-xs text-white text-[11px] font-semibold px-2 py-0.5 rounded-md pointer-events-none">
         {aLabel}
       </div>
@@ -69,12 +73,16 @@ export const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
         className="absolute inset-0 overflow-hidden"
         style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
       >
-        <img
-          src={beforeImage}
-          alt={bLabel}
-          className="absolute inset-0 w-full h-full object-cover"
-          loading="lazy"
-        />
+        {beforeImage?.trim() ? (
+          <img
+            src={beforeImage}
+            alt={bLabel}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-zinc-300 dark:bg-zinc-700" />
+        )}
         <div className="absolute top-3 left-3 bg-zinc-900/80 backdrop-blur-xs text-white text-[11px] font-semibold px-2 py-0.5 rounded-md pointer-events-none">
           {bLabel}
         </div>

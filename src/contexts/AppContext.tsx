@@ -492,11 +492,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     noteBn?: string
   ) => {
     const targetBooking = bookings.find((b) => b.id === bookingId);
+    const statusLabels: Record<BookingStatus, { en: string; bn: string }> = {
+      REQUESTED: { en: 'Requested', bn: 'অনুরোধকৃত' },
+      ACCEPTED: { en: 'Accepted', bn: 'গৃহীত হয়েছে' },
+      ON_THE_WAY: { en: 'Technician On The Way', bn: 'টেকনিশিয়ান রওনা হয়েছেন' },
+      ARRIVED: { en: 'Technician Arrived', bn: 'টেকনিশিয়ান পৌঁছে গেছেন' },
+      IN_PROGRESS: { en: 'Work In Progress', bn: 'কাজ চলছে' },
+      COMPLETED: { en: 'Completed', bn: 'সম্পন্ন হয়েছে' },
+      CANCELLED: { en: 'Cancelled', bn: 'বাতিল হয়েছে' },
+      DISPUTED: { en: 'Disputed', bn: 'অভিযোগ পর্যালোচনাধীন' },
+    };
+    const label = statusLabels[status] || { en: status, bn: status };
+
     const historyItem = {
       status,
       timestamp: new Date().toISOString(),
-      noteEn: noteEn || `Status updated to ${status}`,
-      noteBn: noteBn || `স্ট্যাটাস পরিবর্তন: ${status}`,
+      noteEn: noteEn || `Status updated to ${label.en}`,
+      noteBn: noteBn || `স্ট্যাটাস পরিবর্তন: ${label.bn}`,
     };
     const nextHistory = targetBooking ? [...targetBooking.statusHistory, historyItem] : [historyItem];
     const updatedAt = new Date().toISOString();
@@ -520,22 +532,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt,
     });
 
+    const outNotifs: NotificationItem[] = [];
+    const nowIso = new Date().toISOString();
+
     if (targetBooking?.customerId) {
-      const notif: NotificationItem = {
-        id: `notif-${Date.now()}`,
+      outNotifs.push({
+        id: `notif-bk-cust-${Date.now()}`,
         userId: targetBooking.customerId,
         role: 'CUSTOMER',
-        titleEn: `Booking Status: ${status}`,
-        titleBn: `বুকিং স্ট্যাটাস: ${status}`,
-        messageEn: noteEn || `Your booking status changed to ${status}`,
-        messageBn: noteBn || `আপনার বুকিং স্ট্যাটাস পরিবর্তিত হয়ে ${status} হয়েছে`,
+        titleEn: `Booking #${targetBooking.bookingNumber}: ${label.en}`,
+        titleBn: `বুকিং #${targetBooking.bookingNumber}: ${label.bn}`,
+        messageEn: noteEn || `Your booking status changed to ${label.en}.`,
+        messageBn: noteBn || `আপনার বুকিং স্ট্যাটাস পরিবর্তিত হয়ে "${label.bn}" হয়েছে।`,
         type: 'booking',
         link: `/booking/${bookingId}`,
         isRead: false,
-        createdAt: new Date().toISOString(),
-      };
-      setNotifications((prev) => [notif, ...prev]);
-      void saveNotificationToFirestore(notif);
+        createdAt: nowIso,
+      });
+    }
+
+    if (targetBooking && (status === 'ACCEPTED' || status === 'COMPLETED' || status === 'CANCELLED')) {
+      outNotifs.push({
+        id: `notif-bk-adm-${Date.now() + 1}`,
+        userId: 'ADMIN_BROADCAST',
+        role: 'ADMIN',
+        titleEn: `Booking #${targetBooking.bookingNumber} ${label.en}`,
+        titleBn: `বুকিং #${targetBooking.bookingNumber} — ${label.bn}`,
+        messageEn: `${targetBooking.technicianName} updated booking #${targetBooking.bookingNumber} (${targetBooking.customerName}) to ${label.en}.`,
+        messageBn: `${targetBooking.technicianName} বুকিং #${targetBooking.bookingNumber} (${targetBooking.customerName}) আপডেট করে "${label.bn}" করেছেন।`,
+        type: 'booking',
+        link: '/admin/dashboard',
+        isRead: false,
+        createdAt: nowIso,
+      });
+    }
+
+    if (outNotifs.length > 0) {
+      setNotifications((prev) => [...outNotifs, ...prev]);
+      outNotifs.forEach((n) => void saveNotificationToFirestore(n));
     }
 
     if (getStoredAuthToken()) {
@@ -576,6 +610,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       paidAt: new Date().toISOString(),
     };
 
+    const nowIso = new Date().toISOString();
+
     setBookings((prev) =>
       prev.map((b) =>
         b.id === bookingId
@@ -595,8 +631,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       finalTotal: total,
       paymentStatus: invoice.paymentStatus,
       status: 'COMPLETED',
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
     });
+
+    const outNotifs: NotificationItem[] = [];
+    if (booking.customerId) {
+      outNotifs.push({
+        id: `notif-inv-cust-${Date.now()}`,
+        userId: booking.customerId,
+        role: 'CUSTOMER',
+        titleEn: `Invoice ${invoice.invoiceNumber} Issued`,
+        titleBn: `ইনভয়েস ${invoice.invoiceNumber} তৈরি হয়েছে`,
+        messageEn: `${booking.technicianName} completed your service and generated invoice ${invoice.invoiceNumber} (৳${total}).`,
+        messageBn: `${booking.technicianName} আপনার সার্ভিস সম্পন্ন করে ৳${total} টাকার ইনভয়েস (${invoice.invoiceNumber}) তৈরি করেছেন। পেমেন্ট সম্পন্ন করুন।`,
+        type: 'payment',
+        link: `/booking/${bookingId}`,
+        isRead: false,
+        createdAt: nowIso,
+      });
+    }
+
+    outNotifs.push({
+      id: `notif-inv-adm-${Date.now() + 1}`,
+      userId: 'ADMIN_BROADCAST',
+      role: 'ADMIN',
+      titleEn: `Job Completed & Invoice Generated`,
+      titleBn: `কাজ সম্পন্ন ও ইনভয়েস তৈরি (${invoice.invoiceNumber})`,
+      messageEn: `${booking.technicianName} completed #${booking.bookingNumber} for ${booking.customerName} — Total ৳${total} (${invoice.paymentMethod}).`,
+      messageBn: `${booking.technicianName} বুকিং #${booking.bookingNumber} সম্পন্ন করে ৳${total} ইনভয়েস (${invoice.paymentMethod}) তৈরি করেছেন।`,
+      type: 'payment',
+      link: '/admin/dashboard',
+      isRead: false,
+      createdAt: nowIso,
+    });
+
+    setNotifications((prev) => [...outNotifs, ...prev]);
+    outNotifs.forEach((n) => void saveNotificationToFirestore(n));
   };
 
   const submitReview = (reviewInput: Omit<Review, 'id' | 'createdAt'>) => {
@@ -1038,6 +1108,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resolveReport = (reportId: string, resolution: string) => {
+    const targetReport = reports.find((r) => r.id === reportId);
     setReports((prev) =>
       prev.map((r) => {
         if (r.id !== reportId) return r;
@@ -1046,6 +1117,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return updated;
       })
     );
+
+    if (targetReport) {
+      const nowIso = new Date().toISOString();
+      const outNotifs: NotificationItem[] = [];
+
+      if (targetReport.reporterId) {
+        outNotifs.push({
+          id: `notif-rep-res-r-${Date.now()}`,
+          userId: targetReport.reporterId,
+          role: targetReport.reporterRole,
+          titleEn: `Dispute Report Resolved`,
+          titleBn: `অভিযোগের সমাধান দিয়েছেন অ্যাডমিন`,
+          messageEn: `Admin resolved your report (${targetReport.reason}): ${resolution}`,
+          messageBn: `অ্যাডমিন আপনার "${targetReport.reason}" অভিযোগটি নিষ্পত্তি করেছেন: ${resolution}`,
+          type: 'system',
+          link: targetReport.reporterRole === 'TECHNICIAN' ? '/technician/dashboard' : `/booking/${targetReport.bookingId}`,
+          isRead: false,
+          createdAt: nowIso,
+        });
+      }
+
+      if (targetReport.targetId && targetReport.targetId !== targetReport.reporterId) {
+        outNotifs.push({
+          id: `notif-rep-res-t-${Date.now() + 1}`,
+          userId: targetReport.targetId,
+          role: targetReport.targetRole,
+          titleEn: `Dispute Review Closed by Admin`,
+          titleBn: `অ্যাডমিন অভিযোগ পর্যালোচনা সম্পন্ন করেছেন`,
+          messageEn: `Admin recorded resolution for booking #${targetReport.bookingId}: ${resolution}`,
+          messageBn: `বুকিং সংক্রান্ত অভিযোগটির ব্যাপারে অ্যাডমিন সিদ্ধান্ত জানিয়েছেন: ${resolution}`,
+          type: 'system',
+          link: targetReport.targetRole === 'TECHNICIAN' ? '/technician/dashboard' : `/booking/${targetReport.bookingId}`,
+          isRead: false,
+          createdAt: nowIso,
+        });
+      }
+
+      if (outNotifs.length > 0) {
+        setNotifications((prev) => [...outNotifs, ...prev]);
+        outNotifs.forEach((n) => void saveNotificationToFirestore(n));
+      }
+    }
   };
 
   const addMaintenanceReminder = (reminder: Omit<MaintenanceReminder, 'id' | 'active'>) => {
@@ -1189,27 +1302,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    if (
-      targetTech &&
-      value &&
-      (field === 'skillVerified' || field === 'platformVerified' || field === 'nidVerified')
-    ) {
-      const titleMap = {
-        nidVerified: '✅ আপনার NID যাচাই সম্পন্ন হয়েছে',
-        skillVerified: '🎉 অভিনন্দন! আপনি "দক্ষতা উত্তীর্ণ" হিসেবে অনুমোদিত',
-        platformVerified: '🛡️ আপনি ভেরিফায়েড প্রো ব্যাজ পেয়েছেন',
+    if (targetTech) {
+      const labelMap: Record<typeof field, { en: string; bn: string }> = {
+        phoneVerified: { en: 'Phone Verification', bn: 'ফোন ভেরিফিকেশন' },
+        nidVerified: { en: 'NID Verification', bn: 'NID ভেরিফিকেশন' },
+        skillVerified: { en: 'Skill Pass Approval', bn: 'দক্ষতা উত্তীর্ণ অনুমোদন' },
+        platformVerified: { en: 'Verified Pro Badge', bn: 'ভেরিফায়েড প্রো ব্যাজ' },
       };
+      const label = labelMap[field];
       const techNotif: NotificationItem = {
         id: `notif-kyc-${Date.now()}`,
         userId: targetTech.id,
         role: 'TECHNICIAN',
-        titleEn: `Admin Verification Update`,
-        titleBn: titleMap[field],
-        messageEn: `Admin updated ${field} to verified on your profile.`,
-        messageBn:
-          field === 'skillVerified'
+        titleEn: value ? `${label.en} Approved` : `${label.en} Updated`,
+        titleBn: value
+          ? field === 'skillVerified'
+            ? 'অভিনন্দন! আপনি "দক্ষতা উত্তীর্ণ" হিসেবে অনুমোদিত'
+            : `${label.bn} সম্পন্ন হয়েছে`
+          : `${label.bn} আপডেট করা হয়েছে`,
+        messageEn: value
+          ? `Admin approved ${label.en} on your technician profile.`
+          : `Admin updated ${label.en} status to pending on your profile.`,
+        messageBn: value
+          ? field === 'skillVerified'
             ? 'অ্যাডমিন আপনার বায়োডাটা ও NID যাচাই করে আপনাকে "দক্ষতা উত্তীর্ণ" হিসেবে অনুমোদন দিয়েছেন। এখন থেকে আপনি কাজ পিক করতে পারবেন!'
-            : 'অ্যাডমিন আপনার প্রোফাইল যাচাই আপডেট করেছেন।',
+            : `অ্যাডমিন আপনার প্রোফাইলে "${label.bn}" অনুমোদন করেছেন।`
+          : `অ্যাডমিন আপনার প্রোফাইলে "${label.bn}" স্ট্যাটাস পরিবর্তন করেছেন।`,
         type: 'system',
         link: '/technician/dashboard',
         isRead: false,

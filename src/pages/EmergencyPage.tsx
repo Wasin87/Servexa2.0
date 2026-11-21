@@ -193,11 +193,17 @@ export const EmergencyPage: React.FC = () => {
             >
               <div>
                 <div className="flex items-center gap-3 mb-3">
-                  <img
-                    src={tech.avatar}
-                    alt={tech.name}
-                    className="w-12 h-12 rounded-2xl object-cover border-2 border-rose-500 shadow-xs"
-                  />
+                  {tech.avatar?.trim() ? (
+                    <img
+                      src={tech.avatar}
+                      alt={tech.name}
+                      className="w-12 h-12 rounded-2xl object-cover border-2 border-rose-500 shadow-xs shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white font-black text-base flex items-center justify-center border-2 border-rose-500 shadow-xs shrink-0">
+                      {(tech.name || 'T').charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-extrabold text-xs sm:text-sm text-zinc-900 dark:text-white">
                       {tech.name}

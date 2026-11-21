@@ -1233,11 +1233,17 @@ export const TechnicianMap: React.FC<TechnicianMapProps> = ({
 
               <div className="flex items-start gap-3">
                 <div className="relative shrink-0">
-                  <img
-                    src={activeCardTech.avatar}
-                    alt={activeCardTech.name}
-                    className="w-12 h-12 rounded-xl object-cover border-2 border-orange-500/40 shadow-sm"
-                  />
+                  {activeCardTech.avatar?.trim() ? (
+                    <img
+                      src={activeCardTech.avatar}
+                      alt={activeCardTech.name}
+                      className="w-12 h-12 rounded-xl object-cover border-2 border-orange-500/40 shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-orange-600 text-white font-black text-base flex items-center justify-center border-2 border-orange-500/40 shadow-sm">
+                      {(activeCardTech.name || 'T').charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   {activeCardTech.platformVerified && (
                     <span
                       className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[9px] font-black border-2 border-white dark:border-zinc-900"

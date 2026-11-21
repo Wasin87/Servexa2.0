@@ -26,14 +26,19 @@ import { InvoiceModal } from '../components/common/InvoiceModal';
 import { ReviewModal } from '../components/common/ReviewModal';
 import { ReportModal } from '../components/common/ReportModal';
 import { ChatModal } from '../components/common/ChatModal';
+import { DemoPaymentGatewayModal } from '../components/common/DemoPaymentGatewayModal';
 import { TechnicianRouteMap } from '../components/map/TechnicianRouteMap';
 import { BookingStatus, Technician } from '../types';
 import {
   fetchBookingFinanceDetails,
   respondToExtraCharge,
-  initiatePayment,
   fetchPaymentProviders,
 } from '../services/financeApi';
+import {
+  subscribeToFinanceTransactions,
+  subscribeToCashCollections,
+} from '../services/firestoreFinanceService';
+import { saveNotificationToFirestore } from '../services/firestoreService';
 import type {
   AdditionalChargeRequest,
   BookingPriceSnapshot,
@@ -73,7 +78,9 @@ export const BookingDetailPage: React.FC = () => {
   const [selectedPayMethod, setSelectedPayMethod] = useState<PaymentMethodCode>('bkash');
   const [financeActionMsg, setFinanceActionMsg] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
   const [processingChargeId, setProcessingChargeId] = useState<string | null>(null);
-  const [initiatingPayment, setInitiatingPayment] = useState(false);
+  const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
+  const [fsPaymentTxs, setFsPaymentTxs] = useState<PaymentTransaction[]>([]);
+  const [fsCashCollection, setFsCashCollection] = useState<CashCollectionRecord | null>(null);
 
   const booking = bookings.find((b) => b.id === id);
   const bookingWarranty = booking ? warranties.find(w => w.bookingId === booking.id) : undefined;
@@ -101,6 +108,21 @@ export const BookingDetailPage: React.FC = () => {
   useEffect(() => {
     loadFinanceData();
   }, [loadFinanceData]);
+
+  useEffect(() => {
+    if (!booking?.id) return;
+    const unsubTx = subscribeToFinanceTransactions((list) => {
+      setFsPaymentTxs(list);
+    }, booking.id);
+    const unsubCash = subscribeToCashCollections((list) => {
+      const match = list.find((c) => c.bookingId === booking.id) || null;
+      setFsCashCollection(match);
+    });
+    return () => {
+      unsubTx();
+      unsubCash();
+    };
+  }, [booking?.id]);
 
   useEffect(() => {
     if (booking?.paymentMethod && booking.paymentMethod !== 'cash') {
@@ -136,7 +158,9 @@ export const BookingDetailPage: React.FC = () => {
   };
 
   const formatTxStatus = (st: string) => {
-    if (st === 'PAID') return isBangla ? 'পরিশোধিত' : 'Paid';
+    if (st === 'PAID' || st === 'VERIFIED') return isBangla ? 'অ্যাডমিন গৃহীত (Paid)' : 'Verified & Accepted';
+    if (st === 'PENDING_ADMIN_APPROVAL') return isBangla ? 'অ্যাডমিন এসক্রোতে জমা (অপেক্ষমাণ)' : 'In Admin Escrow (Pending)';
+    if (st === 'REJECTED') return isBangla ? 'প্রত্যাখ্যাত (Rejected)' : 'Rejected';
     if (st === 'PENDING') return isBangla ? 'অপেক্ষমাণ' : 'Pending';
     if (st === 'FAILED') return isBangla ? 'ব্যর্থ' : 'Failed';
     if (st === 'INITIATED') return isBangla ? 'শুরু হয়েছে' : 'Initiated';
@@ -180,6 +204,31 @@ export const BookingDetailPage: React.FC = () => {
       const res = await respondToExtraCharge(booking.id, chargeId, decision);
       if (res.snapshot) setSnapshot(res.snapshot);
       await loadFinanceData();
+
+      if (booking.technicianId) {
+        void saveNotificationToFirestore({
+          id: `notif-echg-resp-${Date.now()}`,
+          userId: booking.technicianId,
+          role: 'TECHNICIAN',
+          titleEn:
+            decision === 'APPROVE'
+              ? `Extra Charge Approved (#${booking.bookingNumber})`
+              : `Extra Charge Rejected (#${booking.bookingNumber})`,
+          titleBn:
+            decision === 'APPROVE'
+              ? `✅ গ্রাহক অতিরিক্ত চার্জ অনুমোদন করেছেন (#${booking.bookingNumber})`
+              : `⚠️ গ্রাহক অতিরিক্ত চার্জ প্রত্যাখ্যান করেছেন (#${booking.bookingNumber})`,
+          messageEn: `${booking.customerName} ${decision === 'APPROVE' ? 'approved' : 'rejected'} your extra work/material charge request.`,
+          messageBn: `${booking.customerName} #${booking.bookingNumber} কাজের অতিরিক্ত চার্জ আবেদন ${
+            decision === 'APPROVE' ? 'অনুমোদন করেছেন' : 'প্রত্যাখ্যান করেছেন'
+          }।`,
+          type: 'payment',
+          link: '/technician/dashboard',
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       setFinanceActionMsg({
         type: 'success',
         text:
@@ -201,31 +250,15 @@ export const BookingDetailPage: React.FC = () => {
     }
   };
 
-  const handleInitiateOnlinePayment = async () => {
-    setInitiatingPayment(true);
-    setFinanceActionMsg(null);
-    try {
-      const res = await initiatePayment(booking.id, selectedPayMethod, `${booking.id}-${selectedPayMethod}-${Date.now()}`);
-      await loadFinanceData();
-      setFinanceActionMsg({
-        type: res.configured ? 'success' : 'info',
-        text: res.configured
-          ? isBangla
-            ? `পেমেন্ট সেশন শুরু হয়েছে (${res.transaction.providerTxId || res.transaction.id})। স্ট্যাটাস: ${formatTxStatus(res.transaction.status)}`
-            : `Payment session initiated (${res.transaction.providerTxId || res.transaction.id}). Status: ${res.transaction.status}`
-          : isBangla
-            ? `${res.message} অনুপস্থিত এনভায়রনমেন্ট ভেরিয়েবল: ${(res.missingEnvVars || []).join(', ') || 'গেটওয়ে ক্রেডেনশিয়াল'}`
-            : `${res.message} Missing env: ${(res.missingEnvVars || []).join(', ') || 'Gateway credentials'}`,
-      });
-    } catch (err: any) {
-      setFinanceActionMsg({
-        type: 'error',
-        text: err?.message || (isBangla ? 'পেমেন্ট শুরু করতে ব্যর্থ হয়েছে।' : 'Failed to initiate payment.'),
-      });
-    } finally {
-      setInitiatingPayment(false);
-    }
-  };
+  const mergedPaymentTransactions = [
+    ...fsPaymentTxs,
+    ...paymentTransactions.filter((pt) => !fsPaymentTxs.some((ft) => ft.id === pt.id)),
+  ];
+  const activeCashCollection = fsCashCollection || cashCollection;
+  const hasPendingEscrowTx = mergedPaymentTransactions.some(
+    (tx) => tx.status === 'PENDING_ADMIN_APPROVAL'
+  );
+  const payableAmount = snapshot?.finalAgreedAmount ?? booking.finalTotal ?? booking.estimatedTotalMax;
 
   const handleCancelBooking = () => {
     updateBookingStatus(booking.id, 'CANCELLED', 'Cancelled by customer', 'গ্রাহক দ্বারা বুকিং বাতিল করা হয়েছে');
@@ -412,11 +445,11 @@ export const BookingDetailPage: React.FC = () => {
                 </p>
               </div>
 
-              {booking.mediaUrls.length > 0 && (
+              {booking.mediaUrls.filter((u) => Boolean(u && u.trim())).length > 0 && (
                 <div>
                   <span className="text-zinc-400 block mb-1.5">{isBangla ? 'সংযুক্ত ছবি/ভিডিও:' : 'Attached Photos/Videos:'}</span>
                   <div className="flex gap-2">
-                    {booking.mediaUrls.map((url, i) => (
+                    {booking.mediaUrls.filter((u) => Boolean(u && u.trim())).map((url, i) => (
                       <img
                         key={i}
                         src={url}
@@ -699,46 +732,59 @@ export const BookingDetailPage: React.FC = () => {
                 <span className="text-zinc-500">{isBangla ? 'পেমেন্ট মেথড ও স্ট্যাটাস:' : 'Payment Method & Status:'}</span>
                 <span className="font-bold text-zinc-800 dark:text-zinc-200 uppercase">
                   {booking.paymentMethod} ·{' '}
-                  <span className={booking.paymentStatus === 'PAID' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
+                  <span
+                    className={
+                      booking.paymentStatus === 'PAID'
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : booking.paymentStatus === 'PENDING_APPROVAL' || hasPendingEscrowTx
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-amber-600 dark:text-amber-400'
+                    }
+                  >
                     {booking.paymentStatus === 'PAID'
                       ? isBangla
                         ? 'পরিশোধিত'
                         : 'PAID'
-                      : isBangla
-                        ? 'বাকি'
-                        : booking.paymentStatus}
+                      : booking.paymentStatus === 'PENDING_APPROVAL' || hasPendingEscrowTx
+                        ? isBangla
+                          ? 'অ্যাডমিন অনুমোদনের অপেক্ষায়'
+                          : 'Pending Admin Approval'
+                        : isBangla
+                          ? 'বাকি'
+                          : booking.paymentStatus}
                   </span>
                 </span>
               </div>
 
-              {cashCollection && (
+              {activeCashCollection && (
                 <div className="p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-1 text-[11px]">
                   <div className="flex items-center justify-between font-bold">
                     <span className="flex items-center gap-1 text-zinc-700 dark:text-zinc-200">
                       <Banknote className="w-3.5 h-3.5 text-emerald-500" />
                       {isBangla ? 'কাজ শেষে নগদ' : 'Cash on Completion'}
                     </span>
-                    <span className="text-orange-600 dark:text-orange-400">{formatCashStatus(cashCollection.status)}</span>
+                    <span className="text-orange-600 dark:text-orange-400">{formatCashStatus(activeCashCollection.status)}</span>
                   </div>
                   <div className="text-zinc-500">
-                    {isBangla ? 'সংগৃহীত:' : 'Collected:'} ৳{cashCollection.amountCollected} ·{' '}
-                    {isBangla ? 'Servexa শেয়ার:' : 'Servexa Share:'} ৳{cashCollection.commissionAmount}
+                    {isBangla ? 'সংগৃহীত:' : 'Collected:'} ৳{activeCashCollection.amountCollected} ·{' '}
+                    {isBangla ? 'Servexa শেয়ার:' : 'Servexa Share:'} ৳{activeCashCollection.commissionAmount}
                   </div>
-                  {cashCollection.deposit?.depositReference && (
+                  {activeCashCollection.deposit?.depositReference && (
                     <div className="font-mono text-zinc-600 dark:text-zinc-300">
-                      {isBangla ? 'ডিপোজিট রেফ:' : 'Deposit Ref:'} {cashCollection.deposit.depositReference} ({formatCashStatus(cashCollection.deposit.status)})
+                      {isBangla ? 'ডিপোজিট রেফ:' : 'Deposit Ref:'} {activeCashCollection.deposit.depositReference} ({formatCashStatus(activeCashCollection.deposit.status)})
                     </div>
                   )}
                 </div>
               )}
 
               {booking.paymentStatus !== 'PAID' &&
+                !hasPendingEscrowTx &&
                 booking.status !== 'CANCELLED' &&
                 (currentUser?.role === 'CUSTOMER' || currentUser?.role === 'ADMIN') && (
                   <div className="p-3 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-500/25 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <label className="font-bold text-[11px] text-zinc-700 dark:text-zinc-300">
-                        {isBangla ? 'অনলাইন পেমেন্ট মাধ্যম:' : 'Online Payment Channel:'}
+                        {isBangla ? 'অনলাইন ব্যাংকিং / MFS:' : 'Online Banking / MFS:'}
                       </label>
                       <select
                         value={selectedPayMethod}
@@ -749,44 +795,58 @@ export const BookingDetailPage: React.FC = () => {
                           .filter((m) => activeMethods[m])
                           .map((m) => (
                             <option key={m} value={m}>
-                              {m.toUpperCase()}
+                              {m === 'card' ? (isBangla ? 'অনলাইন ব্যাংক / কার্ড' : 'ONLINE BANK / CARD') : m.toUpperCase()}
                             </option>
                           ))}
                       </select>
                     </div>
                     <button
                       type="button"
-                      disabled={initiatingPayment}
-                      onClick={handleInitiateOnlinePayment}
-                      className="w-full py-2 px-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      onClick={() => setGatewayModalOpen(true)}
+                      className="w-full py-2.5 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                     >
                       <CreditCard className="w-3.5 h-3.5" />
                       <span>
-                        {initiatingPayment
-                          ? isBangla
-                            ? 'শুরু হচ্ছে...'
-                            : 'Initiating...'
-                          : isBangla
-                            ? `এখনই পেমেন্ট করুন (${selectedPayMethod.toUpperCase()}) · ৳${snapshot?.finalAgreedAmount ?? booking.finalTotal ?? booking.estimatedTotalMax}`
-                            : `Pay Now (${selectedPayMethod.toUpperCase()}) · ৳${snapshot?.finalAgreedAmount ?? booking.finalTotal ?? booking.estimatedTotalMax}`}
+                        {isBangla
+                          ? `অনলাইন পেমেন্ট গেটওয়ে খুলুন · ৳${payableAmount}`
+                          : `Open Online Banking Gateway · ৳${payableAmount}`}
                       </span>
                     </button>
                   </div>
                 )}
 
-              {paymentTransactions.length > 0 && (
+              {hasPendingEscrowTx && booking.paymentStatus !== 'PAID' && (
+                <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-[11px] text-blue-800 dark:text-blue-200 font-semibold">
+                  {isBangla
+                    ? 'আপনার অনলাইন পেমেন্ট Servexa অ্যাডমিন এসক্রো অ্যাকাউন্টে জমা হয়েছে। অ্যাডমিন একসেপ্ট করার সাথে সাথেই বুকিং পেইড হয়ে যাবে।'
+                    : 'Your online payment is held in Servexa Admin Escrow awaiting Admin acceptance.'}
+                </div>
+              )}
+
+              {mergedPaymentTransactions.length > 0 && (
                 <div className="space-y-1.5">
-                  {paymentTransactions.slice(0, 2).map((ptx) => (
+                  {mergedPaymentTransactions.slice(0, 3).map((ptx) => (
                     <div
                       key={ptx.id}
-                      className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-[11px] space-y-0.5"
+                      className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-[11px] space-y-0.5"
                     >
-                      <div className="flex justify-between font-bold">
-                        <span className="font-mono">{ptx.id} ({ptx.method.toUpperCase()})</span>
-                        <span>{formatTxStatus(ptx.status)}</span>
+                      <div className="flex justify-between font-bold gap-2">
+                        <span className="font-mono truncate">{ptx.providerTxId || ptx.id} ({ptx.method.toUpperCase()})</span>
+                        <span
+                          className={`shrink-0 ${
+                            ptx.status === 'VERIFIED'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : ptx.status === 'REJECTED'
+                                ? 'text-rose-600 dark:text-rose-400'
+                                : 'text-blue-600 dark:text-blue-400'
+                          }`}
+                        >
+                          {formatTxStatus(ptx.status)}
+                        </span>
                       </div>
-                      <div className="text-zinc-500">
-                        {isBangla ? 'মোড:' : 'Mode:'} <span className="font-semibold">{ptx.providerMode}</span> · ৳{ptx.amount}
+                      <div className="text-zinc-500 flex items-center justify-between">
+                        <span>{ptx.bankOrProviderName || ptx.providerMode}</span>
+                        <span className="font-bold tabular-nums text-zinc-800 dark:text-zinc-200">৳{ptx.amount}</span>
                       </div>
                     </div>
                   ))}
@@ -1033,6 +1093,25 @@ export const BookingDetailPage: React.FC = () => {
           onClose={() => setChatModalOpen(false)}
         />
       )}
+
+      <DemoPaymentGatewayModal
+        isOpen={gatewayModalOpen}
+        onClose={() => setGatewayModalOpen(false)}
+        booking={booking}
+        amount={payableAmount}
+        initialMethod={selectedPayMethod}
+        customerId={currentUser?.id || booking.customerId}
+        customerName={currentUser?.name || booking.customerName}
+        activeMethods={activeMethods}
+        onSubmitted={(tx) => {
+          setFinanceActionMsg({
+            type: 'success',
+            text: isBangla
+              ? `পেমেন্ট (${tx.providerTxId}) অ্যাডমিন এসক্রোতে জমা হয়েছে। অ্যাডমিন একসেপ্ট করলে ৯০% টেকনিশিয়ানের ওয়ালেটে যোগ হবে।`
+              : `Payment (${tx.providerTxId}) submitted to Admin Escrow.`,
+          });
+        }}
+      />
     </div>
   );
 };

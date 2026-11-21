@@ -401,6 +401,12 @@ export const setTechnicianReserveAdmin = (techId: string, customReserveBalance: 
     body: JSON.stringify({ customReserveBalance, reason }),
   });
 
+export const decideOnlinePaymentAdmin = (txId: string, decision: 'APPROVE' | 'REJECT', note?: string) =>
+  apiRequest<{ success: boolean; status?: string }>(`/api/admin/payments/${encodeURIComponent(txId)}/decide`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, note }),
+  });
+
 export const refundPaymentAdmin = (txId: string, amount: number, reason: string) =>
   apiRequest(`/api/admin/payments/${encodeURIComponent(txId)}/refund`, {
     method: 'POST',

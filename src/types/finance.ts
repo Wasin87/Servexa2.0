@@ -39,9 +39,11 @@ export type TechnicianServiceStatus =
 
 export type OnlinePaymentStatus =
   | 'PENDING'
+  | 'PENDING_ADMIN_APPROVAL'
   | 'PROCESSING'
   | 'VERIFIED'
   | 'FAILED'
+  | 'REJECTED'
   | 'EXPIRED'
   | 'REFUNDED'
   | 'REVERSED';
@@ -317,10 +319,18 @@ export interface AdditionalChargeRequest {
 export interface PaymentTransaction {
   id: string;
   bookingId: string;
+  bookingNumber?: string;
   customerId: string;
+  customerName?: string;
   technicianId: string;
+  technicianName?: string;
   method: PaymentMethodCode;
   amount: number;
+  commissionPercent?: number;
+  commissionAmount?: number;
+  technicianAmount?: number;
+  bankOrProviderName?: string;
+  senderAccountMasked?: string;
   currency: 'BDT';
   status: OnlinePaymentStatus;
   providerTxId?: string | null;
@@ -330,8 +340,11 @@ export interface PaymentTransaction {
   webhookEventId?: string | null;
   checkoutUrl?: string | null;
   failureReason?: string | null;
+  adminNote?: string | null;
+  approvedBy?: string | null;
   createdAt: string;
   verifiedAt?: string | null;
+  rejectedAt?: string | null;
   refundedAmount: number;
 }
 
@@ -502,6 +515,8 @@ export interface AdminFinancialSummary {
   outstandingCommissionDues: number;
   totalRefundsAmount: number;
   totalAdjustmentsNet: number;
+  pendingEscrowAmount?: number;
+  pendingEscrowCount?: number;
 }
 
 export interface PriceQuoteRequest {

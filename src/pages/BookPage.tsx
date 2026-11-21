@@ -666,9 +666,9 @@ export const BookPage: React.FC = () => {
                 />
               </label>
 
-              {mediaUrls.length > 0 && (
+              {mediaUrls.filter((u) => Boolean(u && u.trim())).length > 0 && (
                 <div className="flex items-center gap-2">
-                  {mediaUrls.map((url, i) => (
+                  {mediaUrls.filter((u) => Boolean(u && u.trim())).map((url, i) => (
                     <img
                       key={i}
                       src={url}

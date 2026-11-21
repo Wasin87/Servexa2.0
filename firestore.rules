@@ -80,6 +80,41 @@ service cloud.firestore {
       allow delete: if isValidId(reminderId);
     }
 
+    match /financeTransactions/{txId} {
+      allow read: if true;
+      allow create, update: if isValidId(txId)
+        && request.resource.data.keys().hasAll(['id', 'bookingId', 'customerId', 'technicianId', 'method', 'amount', 'status']);
+      allow delete: if isValidId(txId);
+    }
+
+    match /walletLedger/{entryId} {
+      allow read: if true;
+      allow create, update: if isValidId(entryId)
+        && request.resource.data.keys().hasAll(['id', 'technicianId', 'entryType', 'amount', 'direction']);
+      allow delete: if isValidId(entryId);
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow read: if true;
+      allow create, update: if isValidId(withdrawalId)
+        && request.resource.data.keys().hasAll(['id', 'technicianId', 'payoutAccountId', 'requestedAmount', 'status']);
+      allow delete: if isValidId(withdrawalId);
+    }
+
+    match /payoutAccounts/{accountId} {
+      allow read: if true;
+      allow create, update: if isValidId(accountId)
+        && request.resource.data.keys().hasAll(['id', 'technicianId', 'provider', 'accountNumber', 'verificationStatus']);
+      allow delete: if isValidId(accountId);
+    }
+
+    match /cashCollections/{collectionId} {
+      allow read: if true;
+      allow create, update: if isValidId(collectionId)
+        && request.resource.data.keys().hasAll(['id', 'bookingId', 'technicianId', 'amountCollected', 'status']);
+      allow delete: if isValidId(collectionId);
+    }
+
     match /test/{docId} {
       allow read: if true;
       allow write: if isValidId(docId);

@@ -39,7 +39,13 @@ import { calculateTechnicianCompletion } from '../utils/profileCompletion';
 import { Technician, Booking, ReportItem, WarrantyClaim } from '../types';
 import { AdminRulesManagement } from '../components/admin/AdminRulesManagement';
 import { AdminFinancialDashboard } from '../components/admin/AdminFinancialDashboard';
+import { ImageUploader } from '../components/common/ImageUploader';
 import { fetchAdminFinanceOverview } from '../services/financeApi';
+import {
+  subscribeToFinanceTransactions,
+  subscribeToWalletLedger,
+  subscribeToWithdrawals,
+} from '../services/firestoreFinanceService';
 import { TechnicianMap } from '../components/map/TechnicianMap';
 
 export const AdminDashboard: React.FC = () => {
@@ -98,13 +104,24 @@ export const AdminDashboard: React.FC = () => {
   const [inspectTechId, setInspectTechId] = useState<string | null>(null);
   const [deleteToast, setDeleteToast] = useState<string | null>(null);
   const [livePlatformCommission, setLivePlatformCommission] = useState<number | null>(null);
-  
+  const [pendingFinanceActionsCount, setPendingFinanceActionsCount] = useState<number>(0);
+
   // Dispute Resolution State
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [resolutionInput, setResolutionInput] = useState('');
 
   // Warranty Admin Note State
   const [warrantyNotes, setWarrantyNotes] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (currentUser) {
+      setAdminName(currentUser.name || 'Wasin Ahmed');
+      setAdminPhone(currentUser.phone || '+8801700000000');
+      setAdminAvatar(currentUser.avatar || '');
+      setAdminCity(currentUser.city || 'Dhaka');
+      setAdminArea(currentUser.area || 'Uttara');
+    }
+  }, [currentUser?.id, currentUser?.name, currentUser?.phone, currentUser?.avatar, currentUser?.city, currentUser?.area]);
 
   useEffect(() => {
     const param = searchParams.get('tab');
@@ -120,14 +137,44 @@ export const AdminDashboard: React.FC = () => {
   }, [searchParams, location.pathname]);
 
   useEffect(() => {
-    if (authTokenReady && currentUser?.role === 'ADMIN') {
+    if (currentUser?.role !== 'ADMIN') return;
+    let pendingEscrow = 0;
+    let pendingWithdrawals = 0;
+    const syncBadge = () => setPendingFinanceActionsCount(pendingEscrow + pendingWithdrawals);
+
+    const unsubTx = subscribeToFinanceTransactions((list) => {
+      pendingEscrow = list.filter(
+        (tx) => tx.status === 'PENDING_ADMIN_APPROVAL' || tx.status === 'PENDING'
+      ).length;
+      syncBadge();
+    });
+    const unsubWithdrawals = subscribeToWithdrawals((list) => {
+      pendingWithdrawals = list.filter((w) =>
+        ['PENDING', 'UNDER_REVIEW', 'PROCESSING'].includes(w.status)
+      ).length;
+      syncBadge();
+    });
+    const unsubLedger = subscribeToWalletLedger((entries) => {
+      const commSum = entries
+        .filter((l) => l.entryType === 'COMMISSION_DEDUCTED')
+        .reduce((s, l) => s + Number(l.amount || 0), 0);
+      if (commSum > 0) setLivePlatformCommission(Math.round(commSum));
+    });
+
+    if (authTokenReady) {
       fetchAdminFinanceOverview()
         .then((res) => {
-          setLivePlatformCommission(res.summary.totalPlatformCommission);
+          setLivePlatformCommission((prev) => prev ?? res.summary.totalPlatformCommission);
         })
         .catch(() => {});
     }
-  }, [authTokenReady, currentUser?.role, activeTab]);
+
+    return () => {
+      unsubTx();
+      unsubWithdrawals();
+      unsubLedger();
+    };
+  }, [authTokenReady, currentUser?.role]);
 
   // Stats
   const totalBookings = bookings.length;
@@ -234,7 +281,9 @@ export const AdminDashboard: React.FC = () => {
         {
           id: 'finance',
           label: isBangla ? 'ফাইন্যান্স ও রিকনসিলিয়েশন' : 'Financial Management',
-          icon: <Banknote className="w-4 h-4" />
+          icon: <Banknote className="w-4 h-4" />,
+          count: pendingFinanceActionsCount > 0 ? pendingFinanceActionsCount : undefined,
+          highlightCount: pendingFinanceActionsCount > 0,
         },
         {
           id: 'rules',
@@ -361,13 +410,13 @@ export const AdminDashboard: React.FC = () => {
         kpis={adminKpis}
         mobileStickyTopSlot={
           <div className="flex items-center justify-between gap-2 text-xs py-1">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-              <span className="font-extrabold text-zinc-900 dark:text-white truncate text-[11px]">
-                {isBangla ? 'অ্যাডমিন সিস্টেম লাইভ ও সুরক্ষিত' : 'System Live & Secure'}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="font-bold text-zinc-900 dark:text-white truncate text-[11px]">
+                {isBangla ? 'অ্যাডমিন কন্ট্রোল প্যানেল' : 'Admin Operations Hub'}
               </span>
             </div>
-            <span className="text-[10px] font-mono font-bold text-orange-600 dark:text-orange-400">
+            <span className="text-[10px] font-mono font-bold text-orange-600 dark:text-orange-400 tabular-nums">
               {bookings.length} {isBangla ? 'বুকিং' : 'Bookings'}
             </span>
           </div>
@@ -1065,17 +1114,25 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                {isBangla ? 'প্রোফাইল ছবির URL (Avatar URL)' : 'Profile Photo URL (Avatar)'}
-              </label>
-              <input
-                type="text"
-                value={adminAvatar}
-                onChange={(e) => setAdminAvatar(e.target.value)}
-                placeholder="https://images.unsplash.com/..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-[11px]"
+            <div className="space-y-3">
+              <ImageUploader
+                currentImage={adminAvatar}
+                onImageChange={(url) => setAdminAvatar(url)}
+                label={isBangla ? 'অ্যাডমিন প্রোফাইল ছবি আপলোড করুন' : 'Upload Admin Profile Photo'}
+                shape="circle"
               />
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'অথবা ছবির URL দিন (ঐচ্ছিক)' : 'Or Profile Photo URL (Optional)'}
+                </label>
+                <input
+                  type="text"
+                  value={adminAvatar}
+                  onChange={(e) => setAdminAvatar(e.target.value)}
+                  placeholder="https://images.unsplash.com/..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-[11px]"
+                />
+              </div>
             </div>
 
             {profileToast && (

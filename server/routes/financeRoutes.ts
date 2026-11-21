@@ -1909,6 +1909,53 @@ export function createFinanceRouter(): express.Router {
     }
   });
 
+  router.post('/admin/payments/:txId/decide', requireAuth, requireRole('ADMIN'), (req: AuthenticatedRequest, res) => {
+    try {
+      const db = getDb();
+      const { txId } = req.params;
+      const { decision, note } = req.body || {};
+      if (decision !== 'APPROVE' && decision !== 'REJECT') {
+        return res.status(400).json({ error: 'decision must be APPROVE or REJECT.' });
+      }
+
+      const tx = db.prepare('SELECT * FROM payment_transactions WHERE id = ?').get(txId) as any;
+      if (!tx) return res.status(404).json({ error: 'Payment transaction not found.' });
+      if (tx.status === 'VERIFIED' || tx.status === 'REFUNDED') {
+        return res.json({ deduplicated: true, status: tx.status });
+      }
+
+      const now = new Date().toISOString();
+      let earningsResult: any = null;
+
+      db.transaction(() => {
+        if (decision === 'APPROVE') {
+          db.prepare(`
+            UPDATE payment_transactions
+            SET status = 'VERIFIED', provider_status = 'ADMIN_ACCEPTED', verified_at = ?, failure_reason = NULL
+            WHERE id = ?
+          `).run(now, tx.id);
+          db.prepare("UPDATE bookings SET payment_status = 'PAID', updated_at = ? WHERE id = ?").run(now, tx.booking_id);
+          earningsResult = postBookingEarningsAndCommission(db, tx.booking_id, tx.id, null, req.auth!.sub);
+        } else {
+          db.prepare(`
+            UPDATE payment_transactions
+            SET status = 'REJECTED', provider_status = 'ADMIN_REJECTED', failure_reason = ?
+            WHERE id = ?
+          `).run(String(note || 'Rejected by Admin'), tx.id);
+          db.prepare("UPDATE bookings SET payment_status = 'PENDING', updated_at = ? WHERE id = ?").run(now, tx.booking_id);
+        }
+      })();
+
+      return res.json({
+        success: true,
+        status: decision === 'APPROVE' ? 'VERIFIED' : 'REJECTED',
+        earningsResult,
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message || 'Failed to process payment decision.' });
+    }
+  });
+
   router.post('/admin/payments/:txId/refund', requireAuth, requireRole('ADMIN'), (req: AuthenticatedRequest, res) => {
     try {
       const db = getDb();

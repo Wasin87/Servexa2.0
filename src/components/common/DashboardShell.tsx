@@ -81,9 +81,9 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   const navigate = useNavigate();
 
   const renderSidebarContent = () => (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Portal Identity Block */}
-      <div className="p-3 sm:p-4 border-b border-zinc-100 dark:border-zinc-800 space-y-2.5">
+      <div className="shrink-0 p-3.5 sm:p-4 border-b border-zinc-200/80 dark:border-zinc-800 space-y-2.5 bg-stone-50/50 dark:bg-zinc-950/30">
         <div className="flex items-center gap-2.5 sm:gap-3">
           {userAvatar ? (
             <img
@@ -98,7 +98,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] sm:text-[11px] font-semibold text-orange-600 dark:text-orange-400 truncate">
+            <div className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-orange-600 dark:text-orange-400 truncate">
               {portalLabel}
             </div>
             <div className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white truncate">
@@ -122,20 +122,20 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         </div>
 
         {sidebarTopSlot && (
-          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+          <div className="pt-2 border-t border-zinc-200/70 dark:border-zinc-800/80">
             {sidebarTopSlot}
           </div>
         )}
       </div>
 
-      {/* Grouped Vertical Navigation */}
+      {/* Grouped Vertical Navigation (Y-Axis Auto Scrollable) */}
       <nav
         aria-label={portalLabel}
-        className="flex-1 p-2.5 sm:p-3 space-y-3.5 sm:space-y-4 overflow-y-auto"
+        className="flex-1 min-h-0 p-2.5 sm:p-3 space-y-4 overflow-y-auto overscroll-contain"
       >
         {navGroups.map((group) => (
-          <div key={group.id} className="space-y-0.5">
-            <div className="px-2.5 pb-1 text-[10px] sm:text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 tracking-wide">
+          <div key={group.id} className="space-y-1">
+            <div className="px-2.5 pb-1 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
               {group.label}
             </div>
             <div className="space-y-0.5">
@@ -199,7 +199,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       </nav>
 
       {/* Sidebar Footer: Explicit Logout Action */}
-      <div className="p-2.5 sm:p-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-950/40 rounded-b-2xl">
+      <div className="shrink-0 p-2.5 sm:p-3 border-t border-zinc-200/80 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-950/40 rounded-b-2xl">
         <button
           type="button"
           onClick={() => {
@@ -207,9 +207,9 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
             setMobileSidebarOpen(false);
             navigate('/login');
           }}
-          className="w-full py-2 px-3 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          className="w-full py-2 px-3 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
         >
-          <LogOut className="w-3.5 h-3.5" />
+          <LogOut className="w-3.5 h-3.5 shrink-0" />
           <span>{isBangla ? 'লগআউট করুন' : 'Sign Out'}</span>
         </button>
       </div>
@@ -280,14 +280,14 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto">{renderSidebarContent()}</div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{renderSidebarContent()}</div>
           </aside>
         </div>
       )}
 
       {/* Desktop Two-Column Workspace */}
       <div className="flex flex-col lg:flex-row items-start gap-4 lg:gap-6">
-        <aside className="hidden lg:flex w-[272px] shrink-0 sticky top-20 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden max-h-[calc(100vh-6rem)] flex-col">
+        <aside className="hidden lg:flex w-[276px] shrink-0 sticky top-20 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden h-[calc(100vh-6rem)] min-h-0 flex-col shadow-xs">
           {renderSidebarContent()}
         </aside>
 
@@ -324,13 +324,13 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
               {kpis.map((kpi) => (
                 <div
                   key={kpi.id}
-                  className="p-3 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800"
+                  className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xs transition-colors hover:border-zinc-300 dark:hover:border-zinc-700"
                 >
-                  <div className="text-[11px] sm:text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate">
+                  <div className="text-[11px] sm:text-xs font-semibold text-zinc-500 dark:text-zinc-400 truncate">
                     {kpi.label}
                   </div>
                   <div
-                    className={`text-lg sm:text-2xl font-extrabold tracking-tight tabular-nums mt-0.5 sm:mt-1 truncate ${
+                    className={`text-lg sm:text-2xl font-extrabold tracking-tight tabular-nums mt-1 truncate ${
                       KPI_VALUE_COLOR[kpi.accent || 'neutral']
                     }`}
                   >

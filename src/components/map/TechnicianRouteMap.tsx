@@ -337,13 +337,16 @@ export const TechnicianRouteMap: React.FC<TechnicianRouteMapProps> = ({
           : isBangla
             ? 'আপনি (টেকনিশিয়ান)'
             : 'You (Tech)';
+      const techAvatarHtml = technician.avatar?.trim()
+        ? `<img src="${technician.avatar}" alt="${safeName}" style="width:100%;height:100%;object-fit:cover;" />`
+        : `<span style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#ffffff;font-weight:900;font-size:14px;">${(safeName || 'T').charAt(0).toUpperCase()}</span>`;
       const techHtml = `
         <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-85%);user-select:none;">
           <div style="padding:2px 8px;border-radius:9999px;background:#059669;color:#ffffff;font-size:10px;font-weight:900;border:1px solid #ffffff;white-space:nowrap;margin-bottom:4px;box-shadow:0 4px 12px rgba(0,0,0,0.35);">
             🧭 ${techMarkerTitle}
           </div>
           <div style="width:36px;height:36px;border-radius:9999px;background:#059669;border:2px solid #ffffff;overflow:hidden;box-shadow:0 8px 18px rgba(0,0,0,0.45);">
-            <img src="${technician.avatar}" alt="${safeName}" style="width:100%;height:100%;object-fit:cover;" />
+            ${techAvatarHtml}
           </div>
         </div>
       `;
