@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Image, ShieldCheck, CheckCheck, Paperclip, Phone, MapPin, Sparkles } from 'lucide-react';
+import { X, Send, Image, ShieldCheck, CheckCheck, Paperclip, Phone, MapPin, Sparkles, Trash2 } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -13,7 +13,7 @@ interface ChatModalProps {
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }) => {
-  const { chatMessages, sendMessage, markChatMessagesRead } = useApp();
+  const { chatMessages, sendMessage, markChatMessagesRead, deleteChatMessage } = useApp();
   const { currentUser } = useAuth();
   const { isBangla } = useLanguage();
 
@@ -218,10 +218,21 @@ export const ChatModal: React.FC<ChatModalProps> = ({ booking, isOpen, onClose }
                     <div>{msg.message}</div>
                   </div>
 
-                  <div className="flex items-center gap-1 text-[10px] text-zinc-400 mt-1 px-1">
+                  <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 mt-1 px-1">
                     <span>{timeFormatted}</span>
                     {isMe && (
-                      <CheckCheck className={`w-3.5 h-3.5 ${msg.isRead ? 'text-blue-500' : 'text-orange-500'}`} />
+                      <>
+                        <CheckCheck className={`w-3.5 h-3.5 ${msg.isRead ? 'text-blue-500' : 'text-orange-500'}`} />
+                        <button
+                          type="button"
+                          onClick={() => deleteChatMessage(msg.id)}
+                          title={isBangla ? 'মেসেজ মুছুন' : 'Delete message'}
+                          aria-label={isBangla ? 'মেসেজ মুছুন' : 'Delete message'}
+                          className="p-0.5 rounded text-zinc-400 hover:text-rose-500 cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

@@ -25,9 +25,14 @@ import {
 } from '../services/financeApi';
 import {
   initializeFirestoreDatabase,
+  subscribeToFirestoreCategories,
+  saveCategoryToFirestore,
+  updateCategoryInFirestore,
+  deleteCategoryFromFirestore,
   subscribeToFirestoreBookings,
   saveBookingToFirestore,
   updateBookingInFirestore,
+  deleteBookingFromFirestore,
   subscribeToFirestoreTechnicians,
   saveTechnicianToFirestore,
   deleteTechnicianFromFirestore,
@@ -35,17 +40,25 @@ import {
   saveReviewToFirestore,
   subscribeToFirestoreWarranties,
   saveWarrantyToFirestore,
+  deleteWarrantyFromFirestore,
   subscribeToFirestoreNotifications,
   saveNotificationToFirestore,
   markNotificationReadInFirestore,
+  deleteNotificationFromFirestore,
+  clearNotificationsInFirestore,
   subscribeToFirestoreReports,
   saveReportToFirestore,
+  deleteReportFromFirestore,
   subscribeToFirestoreReminders,
   saveMaintenanceReminderToFirestore,
   deleteMaintenanceReminderFromFirestore,
+  subscribeToFirestoreFavorites,
+  saveFavoriteToFirestore,
+  deleteFavoriteFromFirestore,
   subscribeToFirestoreChatMessages,
   saveChatMessageToFirestore,
   markChatMessageReadInFirestore,
+  deleteChatMessageFromFirestore,
 } from '../services/firestoreService';
 
 interface AppContextType {
@@ -62,8 +75,12 @@ interface AppContextType {
   maintenanceReminders: MaintenanceReminder[];
 
   // Actions
+  addCategory: (cat: Omit<ServiceCategory, 'activeProfessionals'> & { id?: string; activeProfessionals?: number }) => ServiceCategory;
+  updateCategory: (categoryId: string, updates: Partial<ServiceCategory>) => void;
+  deleteCategory: (categoryId: string) => void;
   createBooking: (bookingInput: Partial<Booking>) => Booking;
   updateBookingStatus: (bookingId: string, status: BookingStatus, noteEn?: string, noteBn?: string) => void;
+  deleteBooking: (bookingId: string) => void;
   generateInvoice: (bookingId: string, invoiceData: Partial<Invoice>) => void;
   submitReview: (reviewInput: Omit<Review, 'id' | 'createdAt'>) => void;
   toggleFavorite: (technicianId: string) => void;
@@ -77,14 +94,19 @@ interface AppContextType {
     attachmentUrl?: string,
     senderRoleOverride?: 'CUSTOMER' | 'TECHNICIAN'
   ) => void;
+  deleteChatMessage: (messageId: string) => void;
   markChatMessagesRead: (bookingId: string, readerRole: 'CUSTOMER' | 'TECHNICIAN') => void;
   getUnreadChatCount: (bookingId?: string, forRole?: 'CUSTOMER' | 'TECHNICIAN') => number;
   markNotificationRead: (notificationId: string) => void;
   markAllNotificationsRead: () => void;
+  deleteNotification: (notificationId: string) => void;
+  clearAllNotifications: () => void;
   submitWarrantyClaim: (claim: Omit<WarrantyClaim, 'id' | 'requestDate' | 'status'>) => void;
   updateWarrantyStatus: (claimId: string, status: WarrantyClaim['status'], note?: string) => void;
+  deleteWarrantyClaim: (claimId: string) => void;
   submitReport: (report: Omit<ReportItem, 'id' | 'createdAt' | 'status'>) => void;
   resolveReport: (reportId: string, resolution: string) => void;
+  deleteReport: (reportId: string) => void;
   addMaintenanceReminder: (reminder: Omit<MaintenanceReminder, 'id' | 'active'>) => void;
   deleteMaintenanceReminder: (id: string) => void;
   updateTechnicianAvailability: (technicianId: string, availability: AvailabilityStatus) => void;
@@ -323,6 +345,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     void initializeFirestoreDatabase();
 
+    const unsubCategories = subscribeToFirestoreCategories((remoteCategories) => {
+      if (remoteCategories.length > 0) {
+        setCategories(remoteCategories);
+      }
+    });
+
     const unsubBookings = subscribeToFirestoreBookings((remoteBookings) => {
       setBookings(remoteBookings.filter((b) => !isDummyBooking(b)));
     });
@@ -358,6 +386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return () => {
+      unsubCategories();
       unsubBookings();
       unsubTechs();
       unsubReviews();
@@ -368,6 +397,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubChats();
     };
   }, []);
+
+  // Real-time Firestore favorites subscription for the signed-in user
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const unsubFavs = subscribeToFirestoreFavorites(currentUser.id, (techIds) => {
+      setFavorites(techIds.filter((id) => !DUMMY_TECH_IDS.has(id)));
+    });
+    return () => unsubFavs();
+  }, [currentUser?.id]);
+
+  const addCategory = (
+    catInput: Omit<ServiceCategory, 'activeProfessionals'> & { id?: string; activeProfessionals?: number }
+  ): ServiceCategory => {
+    const slug = (catInput.id || catInput.nameEn || `cat-${Date.now()}`)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const newCat: ServiceCategory = {
+      id: slug || `cat-${Date.now()}`,
+      nameEn: catInput.nameEn,
+      nameBn: catInput.nameBn,
+      icon: catInput.icon || 'Wrench',
+      descriptionEn: catInput.descriptionEn || '',
+      descriptionBn: catInput.descriptionBn || '',
+      startingPrice: Number(catInput.startingPrice) || 400,
+      popular: Boolean(catInput.popular),
+      emergencyAvailable: Boolean(catInput.emergencyAvailable),
+      activeProfessionals: catInput.activeProfessionals ?? 0,
+      tags: catInput.tags || [],
+    };
+    setCategories((prev) => {
+      const exists = prev.some((c) => c.id === newCat.id);
+      return exists ? prev.map((c) => (c.id === newCat.id ? newCat : c)) : [...prev, newCat];
+    });
+    void saveCategoryToFirestore(newCat);
+    return newCat;
+  };
+
+  const updateCategory = (categoryId: string, updates: Partial<ServiceCategory>) => {
+    setCategories((prev) =>
+      prev.map((c) => (c.id === categoryId ? { ...c, ...updates } : c))
+    );
+    void updateCategoryInFirestore(categoryId, updates);
+  };
+
+  const deleteCategory = (categoryId: string) => {
+    setCategories((prev) => prev.filter((c) => c.id !== categoryId));
+    void deleteCategoryFromFirestore(categoryId);
+  };
 
   const createBooking = (input: Partial<Booking>): Booking => {
     const bookingNumber =
@@ -726,9 +804,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleFavorite = (technicianId: string) => {
+    const currentlyFav = favorites.includes(technicianId);
     setFavorites((prev) =>
-      prev.includes(technicianId) ? prev.filter((id) => id !== technicianId) : [...prev, technicianId]
+      currentlyFav ? prev.filter((id) => id !== technicianId) : [...prev, technicianId]
     );
+    if (currentUser?.id) {
+      if (currentlyFav) {
+        void deleteFavoriteFromFirestore(currentUser.id, technicianId);
+      } else {
+        void saveFavoriteToFirestore(currentUser.id, technicianId);
+      }
+    }
+  };
+
+  const deleteBooking = (bookingId: string) => {
+    setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+    void deleteBookingFromFirestore(bookingId);
   };
 
   const isFavorite = (technicianId: string) => favorites.includes(technicianId);
@@ -870,6 +961,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return n;
       })
     );
+  };
+
+  const deleteNotification = (notificationId: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+    void deleteNotificationFromFirestore(notificationId);
+  };
+
+  const clearAllNotifications = () => {
+    const targetIds = notifications
+      .filter((n) => {
+        if (!currentUser) return true;
+        if (currentUser.role === 'ADMIN') return n.role === 'ADMIN';
+        return n.role === currentUser.role && n.userId === currentUser.id;
+      })
+      .map((n) => n.id);
+    if (targetIds.length === 0) return;
+    const idSet = new Set(targetIds);
+    setNotifications((prev) => prev.filter((n) => !idSet.has(n.id)));
+    void clearNotificationsInFirestore(targetIds);
+  };
+
+  const deleteChatMessage = (messageId: string) => {
+    setChatMessages((prev) => prev.filter((m) => m.id !== messageId));
+    void deleteChatMessageFromFirestore(messageId);
+  };
+
+  const deleteWarrantyClaim = (claimId: string) => {
+    setWarranties((prev) => prev.filter((w) => w.id !== claimId));
+    void deleteWarrantyFromFirestore(claimId);
+  };
+
+  const deleteReport = (reportId: string) => {
+    setReports((prev) => prev.filter((r) => r.id !== reportId));
+    void deleteReportFromFirestore(reportId);
   };
 
   const submitWarrantyClaim = (claim: Omit<WarrantyClaim, 'id' | 'requestDate' | 'status'>) => {
@@ -1400,8 +1525,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         warranties,
         reports,
         maintenanceReminders,
+        addCategory,
+        updateCategory,
+        deleteCategory,
         createBooking,
         updateBookingStatus,
+        deleteBooking,
         generateInvoice,
         submitReview,
         toggleFavorite,
@@ -1410,14 +1539,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeFromCompare,
         clearCompare,
         sendMessage,
+        deleteChatMessage,
         markChatMessagesRead,
         getUnreadChatCount,
         markNotificationRead,
         markAllNotificationsRead,
+        deleteNotification,
+        clearAllNotifications,
         submitWarrantyClaim,
         updateWarrantyStatus,
+        deleteWarrantyClaim,
         submitReport,
         resolveReport,
+        deleteReport,
         addMaintenanceReminder,
         deleteMaintenanceReminder,
         updateTechnicianAvailability,

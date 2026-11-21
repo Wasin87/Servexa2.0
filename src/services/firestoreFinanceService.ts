@@ -4,6 +4,7 @@ import {
   onSnapshot,
   setDoc,
   updateDoc,
+  deleteDoc,
   getDocs,
   query,
   where,
@@ -16,12 +17,18 @@ import {
   updateBookingInFirestore,
 } from './firestoreService';
 import type {
+  AdditionalChargeRequest,
+  AdminAuditLog,
   AdminFinancialSummary,
   CashCollectionRecord,
   PaymentMethodCode,
   PaymentTransaction,
   PayoutAccount,
   PayoutProvider,
+  PlatformRules,
+  PricingRule,
+  ServiceSubcategory,
+  TechnicianServiceConfig,
   WalletLedgerEntry,
   WalletSummary,
   WithdrawalRequest,
@@ -1023,5 +1030,227 @@ export async function adminVerifyCashDepositInFirestore(
       isRead: false,
       createdAt: now,
     });
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Payout Account Delete                                                      */
+/* -------------------------------------------------------------------------- */
+
+export async function deletePayoutAccountFromFirestore(accountId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'payoutAccounts', accountId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `payoutAccounts/${accountId}`);
+    throw error;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Extra Work & Material Charges (Real-Time Firestore Sync)                   */
+/* -------------------------------------------------------------------------- */
+
+export function subscribeToExtraCharges(
+  onUpdate: (items: AdditionalChargeRequest[]) => void,
+  bookingId?: string
+) {
+  const colRef = bookingId
+    ? query(collection(db, 'extraCharges'), where('bookingId', '==', bookingId))
+    : collection(db, 'extraCharges');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const list: AdditionalChargeRequest[] = [];
+      snapshot.forEach((d) => list.push(d.data() as AdditionalChargeRequest));
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      onUpdate(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, 'extraCharges')
+  );
+}
+
+export async function saveExtraChargeToFirestore(charge: AdditionalChargeRequest): Promise<void> {
+  try {
+    await setDoc(doc(db, 'extraCharges', charge.id), stripUndefined(charge), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `extraCharges/${charge.id}`);
+    throw error;
+  }
+}
+
+export async function respondExtraChargeInFirestore(
+  chargeId: string,
+  decision: 'APPROVE' | 'REJECT',
+  respondedBy: string
+): Promise<void> {
+  try {
+    await updateDoc(
+      doc(db, 'extraCharges', chargeId),
+      stripUndefined({
+        status: decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+        respondedAt: new Date().toISOString(),
+        respondedBy,
+      })
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `extraCharges/${chargeId}`);
+  }
+}
+
+export async function deleteExtraChargeFromFirestore(chargeId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'extraCharges', chargeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `extraCharges/${chargeId}`);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Platform Rules, Subcategories, Pricing Rules, Tech Services & Audit Logs   */
+/* -------------------------------------------------------------------------- */
+
+export function subscribeToPlatformRules(onUpdate: (rules: PlatformRules | null) => void) {
+  return onSnapshot(
+    doc(db, 'platformConfig', 'rules_current'),
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data() as { rules?: PlatformRules };
+        onUpdate(data.rules || null);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, 'platformConfig/rules_current')
+  );
+}
+
+export async function savePlatformRulesToFirestore(
+  rules: PlatformRules,
+  updatedBy: string
+): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'platformConfig', 'rules_current'),
+      stripUndefined({
+        id: 'rules_current',
+        rules,
+        updatedAt: rules.updatedAt || new Date().toISOString(),
+        updatedBy: updatedBy || rules.updatedBy || 'Admin',
+      }),
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'platformConfig/rules_current');
+  }
+}
+
+export function subscribeToSubcategories(onUpdate: (items: ServiceSubcategory[]) => void) {
+  return onSnapshot(
+    collection(db, 'subcategories'),
+    (snapshot) => {
+      const list: ServiceSubcategory[] = [];
+      snapshot.forEach((d) => list.push(d.data() as ServiceSubcategory));
+      onUpdate(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, 'subcategories')
+  );
+}
+
+export async function saveSubcategoryToFirestore(sub: ServiceSubcategory): Promise<void> {
+  try {
+    await setDoc(doc(db, 'subcategories', sub.id), stripUndefined(sub), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `subcategories/${sub.id}`);
+  }
+}
+
+export async function deleteSubcategoryFromFirestore(subId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'subcategories', subId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `subcategories/${subId}`);
+  }
+}
+
+export function subscribeToPricingRules(onUpdate: (items: PricingRule[]) => void) {
+  return onSnapshot(
+    collection(db, 'pricingRules'),
+    (snapshot) => {
+      const list: PricingRule[] = [];
+      snapshot.forEach((d) => list.push(d.data() as PricingRule));
+      onUpdate(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, 'pricingRules')
+  );
+}
+
+export async function savePricingRuleToFirestore(rule: PricingRule): Promise<void> {
+  try {
+    await setDoc(doc(db, 'pricingRules', rule.id), stripUndefined(rule), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `pricingRules/${rule.id}`);
+  }
+}
+
+export async function deletePricingRuleFromFirestore(ruleId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'pricingRules', ruleId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `pricingRules/${ruleId}`);
+  }
+}
+
+export function subscribeToTechnicianServices(
+  onUpdate: (items: TechnicianServiceConfig[]) => void,
+  technicianId?: string
+) {
+  const colRef = technicianId
+    ? query(collection(db, 'technicianServices'), where('technicianId', '==', technicianId))
+    : collection(db, 'technicianServices');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const list: TechnicianServiceConfig[] = [];
+      snapshot.forEach((d) => list.push(d.data() as TechnicianServiceConfig));
+      onUpdate(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, 'technicianServices')
+  );
+}
+
+export async function saveTechnicianServiceToFirestore(svc: TechnicianServiceConfig): Promise<void> {
+  try {
+    await setDoc(doc(db, 'technicianServices', svc.id), stripUndefined(svc), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `technicianServices/${svc.id}`);
+  }
+}
+
+export async function deleteTechnicianServiceFromFirestore(svcId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'technicianServices', svcId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `technicianServices/${svcId}`);
+  }
+}
+
+export function subscribeToAuditLogs(onUpdate: (items: AdminAuditLog[]) => void) {
+  return onSnapshot(
+    collection(db, 'auditLogs'),
+    (snapshot) => {
+      const list: AdminAuditLog[] = [];
+      snapshot.forEach((d) => list.push(d.data() as AdminAuditLog));
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      onUpdate(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, 'auditLogs')
+  );
+}
+
+export async function saveAuditLogToFirestore(log: AdminAuditLog): Promise<void> {
+  try {
+    await setDoc(doc(db, 'auditLogs', log.id), stripUndefined(log), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `auditLogs/${log.id}`);
   }
 }

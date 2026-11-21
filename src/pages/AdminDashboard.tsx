@@ -28,7 +28,9 @@ import {
   Sliders,
   Banknote,
   Map,
-  Flame
+  Flame,
+  Plus,
+  Edit3,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -36,7 +38,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { DashboardShell, DashboardNavGroup, DashboardKpiItem } from '../components/common/DashboardShell';
 import { calculateTechnicianCompletion } from '../utils/profileCompletion';
-import { Technician, Booking, ReportItem, WarrantyClaim } from '../types';
+import { Technician, Booking, ReportItem, WarrantyClaim, ServiceCategory } from '../types';
 import { AdminRulesManagement } from '../components/admin/AdminRulesManagement';
 import { AdminFinancialDashboard } from '../components/admin/AdminFinancialDashboard';
 import { ImageUploader } from '../components/common/ImageUploader';
@@ -55,10 +57,16 @@ export const AdminDashboard: React.FC = () => {
     reports,
     warranties,
     categories,
+    addCategory,
+    updateCategory,
+    deleteCategory,
     verifyTechnicianField,
     resolveReport,
+    deleteReport,
     updateWarrantyStatus,
+    deleteWarrantyClaim,
     updateBookingStatus,
+    deleteBooking,
     deleteTechnician
   } = useApp();
   const { t, isBangla } = useLanguage();
@@ -101,6 +109,21 @@ export const AdminDashboard: React.FC = () => {
   const [techSearch, setTechSearch] = useState('');
   const [bookingFilterStatus, setBookingFilterStatus] = useState<string>('ALL');
   const [techToDelete, setTechToDelete] = useState<Technician | null>(null);
+  const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
+  const [reportToDelete, setReportToDelete] = useState<ReportItem | null>(null);
+  const [warrantyToDelete, setWarrantyToDelete] = useState<WarrantyClaim | null>(null);
+  const [catToDelete, setCatToDelete] = useState<ServiceCategory | null>(null);
+  const [catModalOpen, setCatModalOpen] = useState(false);
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [catForm, setCatForm] = useState({
+    nameEn: '',
+    nameBn: '',
+    descriptionEn: '',
+    descriptionBn: '',
+    icon: '🔧',
+    startingPrice: 400,
+    emergencyAvailable: true,
+  });
   const [inspectTechId, setInspectTechId] = useState<string | null>(null);
   const [deleteToast, setDeleteToast] = useState<string | null>(null);
   const [livePlatformCommission, setLivePlatformCommission] = useState<number | null>(null);
@@ -112,6 +135,70 @@ export const AdminDashboard: React.FC = () => {
 
   // Warranty Admin Note State
   const [warrantyNotes, setWarrantyNotes] = useState<Record<string, string>>({});
+
+  const openAddCategoryModal = () => {
+    setEditingCatId(null);
+    setCatForm({
+      nameEn: '',
+      nameBn: '',
+      descriptionEn: '',
+      descriptionBn: '',
+      icon: '🔧',
+      startingPrice: 400,
+      emergencyAvailable: true,
+    });
+    setCatModalOpen(true);
+  };
+
+  const openEditCategoryModal = (cat: ServiceCategory) => {
+    setEditingCatId(cat.id);
+    setCatForm({
+      nameEn: cat.nameEn || '',
+      nameBn: cat.nameBn || '',
+      descriptionEn: cat.descriptionEn || '',
+      descriptionBn: cat.descriptionBn || '',
+      icon: cat.icon || '🔧',
+      startingPrice: cat.startingPrice || 400,
+      emergencyAvailable: cat.emergencyAvailable ?? true,
+    });
+    setCatModalOpen(true);
+  };
+
+  const handleSaveCategoryForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!catForm.nameEn.trim() || !catForm.nameBn.trim()) return;
+    if (editingCatId) {
+      updateCategory(editingCatId, {
+        nameEn: catForm.nameEn.trim(),
+        nameBn: catForm.nameBn.trim(),
+        descriptionEn: catForm.descriptionEn.trim(),
+        descriptionBn: catForm.descriptionBn.trim(),
+        icon: catForm.icon.trim() || '🔧',
+        startingPrice: Number(catForm.startingPrice) || 0,
+        emergencyAvailable: catForm.emergencyAvailable,
+      });
+      setDeleteToast(
+        isBangla ? `ক্যাটাগরি "${catForm.nameBn}" ফায়ারবেসে আপডেট হয়েছে।` : `Category "${catForm.nameEn}" updated in Firestore.`
+      );
+    } else {
+      addCategory({
+        id: catForm.nameEn.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_') || `cat-${Date.now()}`,
+        nameEn: catForm.nameEn.trim(),
+        nameBn: catForm.nameBn.trim(),
+        descriptionEn: catForm.descriptionEn.trim() || 'Professional home repair & maintenance service.',
+        descriptionBn: catForm.descriptionBn.trim() || 'দক্ষ টেকনিশিয়ান দ্বারা নির্ভরযোগ্য হোম সার্ভিস।',
+        icon: catForm.icon.trim() || '🔧',
+        startingPrice: Number(catForm.startingPrice) || 400,
+        emergencyAvailable: catForm.emergencyAvailable,
+        tags: [catForm.nameEn.trim(), catForm.nameBn.trim()],
+      });
+      setDeleteToast(
+        isBangla ? `নতুন ক্যাটাগরি "${catForm.nameBn}" ফায়ারবেসে যোগ হয়েছে।` : `New category "${catForm.nameEn}" added to Firestore.`
+      );
+    }
+    setCatModalOpen(false);
+    setTimeout(() => setDeleteToast(null), 3500);
+  };
 
   useEffect(() => {
     if (currentUser) {
@@ -724,12 +811,23 @@ export const AdminDashboard: React.FC = () => {
                       <div className="text-[10px] text-zinc-400">{b.paymentStatus}</div>
                     </div>
 
-                    <Link
-                      to={`/booking/${b.id}`}
-                      className="px-3 py-1.5 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold hover:bg-zinc-100"
-                    >
-                      {isBangla ? 'বিস্তারিত' : 'View'}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/booking/${b.id}`}
+                        className="px-3 py-1.5 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                      >
+                        {isBangla ? 'বিস্তারিত' : 'View'}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setBookingToDelete(b)}
+                        title={isBangla ? 'বুকিং মুছুন' : 'Delete Booking'}
+                        aria-label={isBangla ? 'বুকিং মুছুন' : 'Delete Booking'}
+                        className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -769,17 +867,28 @@ export const AdminDashboard: React.FC = () => {
                       ({isBangla ? `বুকিং #${rep.bookingNumber}` : `Booking #${rep.bookingNumber}`})
                     </span>
                   </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                    rep.status === 'OPEN' ? 'bg-rose-500/20 text-rose-600 border border-rose-500/30' : 'bg-emerald-500/15 text-emerald-600'
-                  }`}>
-                    {rep.status === 'OPEN'
-                      ? isBangla
-                        ? 'চলমান'
-                        : 'OPEN'
-                      : isBangla
-                      ? 'নিষ্পত্তি হয়েছে'
-                      : 'RESOLVED'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                      rep.status === 'OPEN' ? 'bg-rose-500/20 text-rose-600 border border-rose-500/30' : 'bg-emerald-500/15 text-emerald-600'
+                    }`}>
+                      {rep.status === 'OPEN'
+                        ? isBangla
+                          ? 'চলমান'
+                          : 'OPEN'
+                        : isBangla
+                        ? 'নিষ্পত্তি হয়েছে'
+                        : 'RESOLVED'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setReportToDelete(rep)}
+                      title={isBangla ? 'অভিযোগ মুছুন' : 'Delete Dispute'}
+                      aria-label={isBangla ? 'অভিযোগ মুছুন' : 'Delete Dispute'}
+                      className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="text-xs space-y-1">
@@ -899,9 +1008,20 @@ export const AdminDashboard: React.FC = () => {
                           {isBangla ? `সার্ভিস নং: #${w.bookingNumber}` : `Booking No: #${w.bookingNumber}`}
                         </span>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-[11px] font-black self-start sm:self-auto ${statusBadgeStyle[w.status]}`}>
-                        {statusBadgeLabel[w.status]}
-                      </span>
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <span className={`px-3 py-1 rounded-full text-[11px] font-black ${statusBadgeStyle[w.status]}`}>
+                          {statusBadgeLabel[w.status]}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setWarrantyToDelete(w)}
+                          title={isBangla ? 'ক্লেইম মুছুন' : 'Delete Claim'}
+                          aria-label={isBangla ? 'ক্লেইম মুছুন' : 'Delete Claim'}
+                          className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -996,32 +1116,62 @@ export const AdminDashboard: React.FC = () => {
       {/* TAB 5: CATEGORIES & TARIFFS */}
       {activeTab === 'categories' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-black text-zinc-900 dark:text-white">
                 {isBangla ? 'সার্ভিস ক্যাটাগরি ও স্ট্যান্ডার্ড ট্যারিফ রেট' : 'Service Categories & Tariff Matrix'}
               </h3>
               <p className="text-xs text-zinc-500">
-                {isBangla ? 'প্ল্যাটফর্মের প্রারম্ভিক প্রাইসিং ও সক্রিয় টেকনিশিয়ান সংখ্যা পর্যবেক্ষণ।' : 'Manage baseline starting tariffs and monitor professional coverage.'}
+                {isBangla ? 'প্ল্যাটফর্মের ক্যাটাগরি যোগ, আপডেট এবং ডিলিট করুন (রিয়েল-টাইম ফায়ারবেস সিঙ্ক)।' : 'Create, update, or delete service categories synced live with Firebase Firestore.'}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={openAddCategoryModal}
+              className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isBangla ? 'নতুন ক্যাটাগরি যোগ করুন' : 'Add Category'}</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {categories.map((cat) => (
-              <div key={cat.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-2xl">{cat.icon || '🔧'}</span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-bold">
-                    {cat.activeProfessionals}+ {isBangla ? 'মিস্ত্রি' : 'Pros'}
-                  </span>
+              <div key={cat.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-2.5 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-2xl">{cat.icon || '🔧'}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-bold">
+                        {cat.activeProfessionals}+ {isBangla ? 'মিস্ত্রি' : 'Pros'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => openEditCategoryModal(cat)}
+                        title={isBangla ? 'সম্পাদনা' : 'Edit Category'}
+                        aria-label={isBangla ? 'সম্পাদনা' : 'Edit Category'}
+                        className="p-1.5 rounded-lg text-zinc-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCatToDelete(cat)}
+                        title={isBangla ? 'ডিলিট' : 'Delete Category'}
+                        aria-label={isBangla ? 'ডিলিট' : 'Delete Category'}
+                        className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <h4 className="font-extrabold text-sm text-zinc-900 dark:text-white">
+                    {isBangla ? cat.nameBn : cat.nameEn}
+                  </h4>
+                  <p className="text-xs text-zinc-500 line-clamp-2">
+                    {isBangla ? cat.descriptionBn : cat.descriptionEn}
+                  </p>
                 </div>
-                <h4 className="font-extrabold text-sm text-zinc-900 dark:text-white">
-                  {isBangla ? cat.nameBn : cat.nameEn}
-                </h4>
-                <p className="text-xs text-zinc-500 line-clamp-2">
-                  {isBangla ? cat.descriptionBn : cat.descriptionEn}
-                </p>
                 <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
                   <span className="text-zinc-500">{isBangla ? 'শুরু মূল্য:' : 'Starting at:'}</span>
                   <span className="font-black text-emerald-600">৳{cat.startingPrice}</span>
@@ -1534,6 +1684,169 @@ export const AdminDashboard: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Create / Edit Category Modal */}
+      {catModalOpen && (
+        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <form onSubmit={handleSaveCategoryForm} className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <h4 className="text-sm font-black text-zinc-900 dark:text-white">
+                {editingCatId
+                  ? isBangla ? 'ক্যাটাগরি আপডেট করুন' : 'Update Category'
+                  : isBangla ? 'নতুন সার্ভিস ক্যাটাগরি যোগ করুন' : 'Add Service Category'}
+              </h4>
+              <button type="button" onClick={() => setCatModalOpen(false)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">✕</button>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <label className="font-bold block mb-1">{isBangla ? 'আইকন' : 'Icon'}</label>
+                <input
+                  type="text"
+                  value={catForm.icon}
+                  onChange={(e) => setCatForm({ ...catForm, icon: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-center text-base"
+                />
+              </div>
+              <div className="col-span-3">
+                <label className="font-bold block mb-1">{isBangla ? 'শুরুর মূল্য (৳)' : 'Starting Price (৳)'}</label>
+                <input
+                  type="number"
+                  required
+                  min={50}
+                  value={catForm.startingPrice}
+                  onChange={(e) => setCatForm({ ...catForm, startingPrice: Number(e.target.value) })}
+                  className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-bold"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="font-bold block mb-1">{isBangla ? 'নাম (বাংলা)' : 'Name (Bengali)'}</label>
+              <input
+                type="text"
+                required
+                value={catForm.nameBn}
+                onChange={(e) => setCatForm({ ...catForm, nameBn: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+              />
+            </div>
+            <div>
+              <label className="font-bold block mb-1">{isBangla ? 'নাম (ইংরেজি)' : 'Name (English)'}</label>
+              <input
+                type="text"
+                required
+                value={catForm.nameEn}
+                onChange={(e) => setCatForm({ ...catForm, nameEn: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+              />
+            </div>
+            <div>
+              <label className="font-bold block mb-1">{isBangla ? 'বিবরণ (বাংলা)' : 'Description (Bengali)'}</label>
+              <textarea
+                rows={2}
+                value={catForm.descriptionBn}
+                onChange={(e) => setCatForm({ ...catForm, descriptionBn: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+              />
+            </div>
+            <div>
+              <label className="font-bold block mb-1">{isBangla ? 'বিবরণ (ইংরেজি)' : 'Description (English)'}</label>
+              <textarea
+                rows={2}
+                value={catForm.descriptionEn}
+                onChange={(e) => setCatForm({ ...catForm, descriptionEn: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+              />
+            </div>
+            <label className="flex items-center gap-2 font-semibold p-2 rounded-xl bg-stone-50 dark:bg-zinc-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={catForm.emergencyAvailable}
+                onChange={(e) => setCatForm({ ...catForm, emergencyAvailable: e.target.checked })}
+                className="accent-orange-600"
+              />
+              <span>{isBangla ? 'জরুরি সার্ভিস সাপোর্ট করে' : 'Supports Emergency Dispatch'}</span>
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setCatModalOpen(false)} className="px-4 py-2 rounded-xl border font-bold cursor-pointer">
+                {isBangla ? 'বাতিল' : 'Cancel'}
+              </button>
+              <button type="submit" className="px-5 py-2 rounded-xl bg-orange-600 text-white font-black cursor-pointer">
+                {isBangla ? 'সংরক্ষণ করুন' : 'Save Category'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Generic Delete Confirmation Modal for Booking / Dispute / Warranty / Category */}
+      {(bookingToDelete || reportToDelete || warrantyToDelete || catToDelete) && (
+        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-2.5 rounded-2xl bg-rose-500/15 border border-rose-500/30">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h3 className="font-black text-sm text-zinc-900 dark:text-white">
+                {isBangla ? 'ডাটাবেজ থেকে স্থায়ীভাবে ডিলিট করুন' : 'Confirm Permanent Deletion'}
+              </h3>
+            </div>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              {bookingToDelete && (isBangla
+                ? `আপনি কি নিশ্চিতভাবে বুকিং #${bookingToDelete.bookingNumber} ফায়ারবেস ডাটাবেজ থেকে মুছে ফেলতে চান?`
+                : `Are you sure you want to permanently delete Booking #${bookingToDelete.bookingNumber} from Firebase?`)}
+              {reportToDelete && (isBangla
+                ? `আপনি কি নিশ্চিতভাবে অভিযোগ #${reportToDelete.id} ফায়ারবেস ডাটাবেজ থেকে মুছে ফেলতে চান?`
+                : `Are you sure you want to permanently delete Dispute #${reportToDelete.id} from Firebase?`)}
+              {warrantyToDelete && (isBangla
+                ? `আপনি কি নিশ্চিতভাবে ওয়ারেন্টি ক্লেইম #${warrantyToDelete.id} ফায়ারবেস ডাটাবেজ থেকে মুছে ফেলতে চান?`
+                : `Are you sure you want to permanently delete Warranty Claim #${warrantyToDelete.id} from Firebase?`)}
+              {catToDelete && (isBangla
+                ? `আপনি কি নিশ্চিতভাবে ক্যাটাগরি "${catToDelete.nameBn}" ফায়ারবেস ডাটাবেজ থেকে মুছে ফেলতে চান?`
+                : `Are you sure you want to permanently delete Category "${catToDelete.nameEn}" from Firebase?`)}
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setBookingToDelete(null);
+                  setReportToDelete(null);
+                  setWarrantyToDelete(null);
+                  setCatToDelete(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold cursor-pointer"
+              >
+                {isBangla ? 'বাতিল' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (bookingToDelete) {
+                    deleteBooking(bookingToDelete.id);
+                    setDeleteToast(isBangla ? `বুকিং #${bookingToDelete.bookingNumber} ডিলিট করা হয়েছে।` : `Booking #${bookingToDelete.bookingNumber} deleted.`);
+                    setBookingToDelete(null);
+                  } else if (reportToDelete) {
+                    deleteReport(reportToDelete.id);
+                    setDeleteToast(isBangla ? `অভিযোগ #${reportToDelete.id} ডিলিট করা হয়েছে।` : `Dispute #${reportToDelete.id} deleted.`);
+                    setReportToDelete(null);
+                  } else if (warrantyToDelete) {
+                    deleteWarrantyClaim(warrantyToDelete.id);
+                    setDeleteToast(isBangla ? `ওয়ারেন্টি ক্লেইম #${warrantyToDelete.id} ডিলিট করা হয়েছে।` : `Warranty #${warrantyToDelete.id} deleted.`);
+                    setWarrantyToDelete(null);
+                  } else if (catToDelete) {
+                    deleteCategory(catToDelete.id);
+                    setDeleteToast(isBangla ? `ক্যাটাগরি "${catToDelete.nameBn}" ডিলিট করা হয়েছে।` : `Category "${catToDelete.nameEn}" deleted.`);
+                    setCatToDelete(null);
+                  }
+                  setTimeout(() => setDeleteToast(null), 3500);
+                }}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer"
+              >
+                {isBangla ? 'হ্যাঁ, ডিলিট করুন' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Toast Notification */}
       {deleteToast && (

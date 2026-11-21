@@ -20,6 +20,7 @@ import {
   NotificationItem,
   ReportItem,
   Review,
+  ServiceCategory,
   Technician,
   User,
   WarrantyClaim
@@ -43,6 +44,12 @@ export interface FirestoreErrorInfo {
     userId?: string | null;
     email?: string | null;
     emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
   };
 }
 
@@ -53,11 +60,18 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       userId: auth.currentUser?.uid ?? null,
       email: auth.currentUser?.email ?? null,
       emailVerified: auth.currentUser?.emailVerified ?? null,
+      isAnonymous: auth.currentUser?.isAnonymous ?? null,
+      tenantId: auth.currentUser?.tenantId ?? null,
+      providerInfo:
+        auth.currentUser?.providerData?.map((p) => ({
+          providerId: p.providerId,
+          email: p.email,
+        })) || [],
     },
     operationType,
-    path
+    path,
   };
-  console.warn('Firestore Error Handled:', JSON.stringify(errInfo));
+  console.error('Firestore Error:', JSON.stringify(errInfo));
 }
 
 function stripUndefined<T>(value: T): T {
@@ -168,6 +182,75 @@ export async function getUserByPhoneFromFirestore(phone: string): Promise<User |
   }
 }
 
+export function subscribeToUserInFirestore(userId: string, onUpdate: (user: User | null) => void) {
+  if (!userId) return () => {};
+  return onSnapshot(
+    doc(db, 'users', userId),
+    (snapshot) => {
+      onUpdate(snapshot.exists() ? (snapshot.data() as User) : null);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}`)
+  );
+}
+
+export async function updateUserInFirestore(userId: string, updates: Partial<User>): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', userId), stripUndefined(updates));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+  }
+}
+
+export async function deleteUserFromFirestore(userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'users', userId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${userId}`);
+  }
+}
+
+/**
+ * Categories
+ */
+export function subscribeToFirestoreCategories(onUpdate: (categories: ServiceCategory[]) => void) {
+  return onSnapshot(
+    collection(db, 'categories'),
+    (snapshot) => {
+      const list: ServiceCategory[] = [];
+      snapshot.forEach((d) => list.push(d.data() as ServiceCategory));
+      onUpdate(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, 'categories')
+  );
+}
+
+export async function saveCategoryToFirestore(category: ServiceCategory): Promise<void> {
+  try {
+    await setDoc(doc(db, 'categories', category.id), stripUndefined(category), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `categories/${category.id}`);
+  }
+}
+
+export async function updateCategoryInFirestore(
+  categoryId: string,
+  updates: Partial<ServiceCategory>
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'categories', categoryId), stripUndefined(updates));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `categories/${categoryId}`);
+  }
+}
+
+export async function deleteCategoryFromFirestore(categoryId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'categories', categoryId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `categories/${categoryId}`);
+  }
+}
+
 /**
  * Technicians
  */
@@ -240,6 +323,14 @@ export async function updateBookingInFirestore(bookingId: string, updates: Parti
   }
 }
 
+export async function deleteBookingFromFirestore(bookingId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'bookings', bookingId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `bookings/${bookingId}`);
+  }
+}
+
 /**
  * Reviews
  */
@@ -266,6 +357,22 @@ export async function saveReviewToFirestore(review: Review): Promise<void> {
   }
 }
 
+export async function updateReviewInFirestore(reviewId: string, updates: Partial<Review>): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'reviews', reviewId), stripUndefined(updates));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `reviews/${reviewId}`);
+  }
+}
+
+export async function deleteReviewFromFirestore(reviewId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'reviews', reviewId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `reviews/${reviewId}`);
+  }
+}
+
 /**
  * Warranty Claims
  */
@@ -286,9 +393,28 @@ export function subscribeToFirestoreWarranties(onUpdate: (claims: WarrantyClaim[
 
 export async function saveWarrantyToFirestore(claim: WarrantyClaim): Promise<void> {
   try {
-    await setDoc(doc(db, 'warranties', claim.id), stripUndefined(claim));
+    await setDoc(doc(db, 'warranties', claim.id), stripUndefined(claim), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `warranties/${claim.id}`);
+  }
+}
+
+export async function updateWarrantyInFirestore(
+  claimId: string,
+  updates: Partial<WarrantyClaim>
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'warranties', claimId), stripUndefined(updates));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `warranties/${claimId}`);
+  }
+}
+
+export async function deleteWarrantyFromFirestore(claimId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'warranties', claimId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `warranties/${claimId}`);
   }
 }
 
@@ -326,6 +452,18 @@ export async function markNotificationReadInFirestore(notificationId: string): P
   }
 }
 
+export async function deleteNotificationFromFirestore(notificationId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'notifications', notificationId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `notifications/${notificationId}`);
+  }
+}
+
+export async function clearNotificationsInFirestore(notificationIds: string[]): Promise<void> {
+  await Promise.all(notificationIds.map((id) => deleteNotificationFromFirestore(id)));
+}
+
 /**
  * Reports / Disputes
  */
@@ -346,9 +484,25 @@ export function subscribeToFirestoreReports(onUpdate: (items: ReportItem[]) => v
 
 export async function saveReportToFirestore(report: ReportItem): Promise<void> {
   try {
-    await setDoc(doc(db, 'reports', report.id), stripUndefined(report));
+    await setDoc(doc(db, 'reports', report.id), stripUndefined(report), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `reports/${report.id}`);
+  }
+}
+
+export async function updateReportInFirestore(reportId: string, updates: Partial<ReportItem>): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'reports', reportId), stripUndefined(updates));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `reports/${reportId}`);
+  }
+}
+
+export async function deleteReportFromFirestore(reportId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'reports', reportId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `reports/${reportId}`);
   }
 }
 
@@ -371,7 +525,7 @@ export function subscribeToFirestoreReminders(onUpdate: (items: MaintenanceRemin
 
 export async function saveMaintenanceReminderToFirestore(rem: MaintenanceReminder): Promise<void> {
   try {
-    await setDoc(doc(db, 'maintenanceReminders', rem.id), stripUndefined(rem));
+    await setDoc(doc(db, 'maintenanceReminders', rem.id), stripUndefined(rem), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `maintenanceReminders/${rem.id}`);
   }
@@ -382,6 +536,54 @@ export async function deleteMaintenanceReminderFromFirestore(id: string): Promis
     await deleteDoc(doc(db, 'maintenanceReminders', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `maintenanceReminders/${id}`);
+  }
+}
+
+/**
+ * Favorites
+ */
+export function subscribeToFirestoreFavorites(
+  userId: string,
+  onUpdate: (technicianIds: string[]) => void
+) {
+  if (!userId) return () => {};
+  const q = query(collection(db, 'favorites'), where('userId', '==', userId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const ids: string[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data() as { technicianId?: string };
+        if (data.technicianId) ids.push(data.technicianId);
+      });
+      onUpdate(ids);
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, `favorites?userId=${userId}`)
+  );
+}
+
+export async function saveFavoriteToFirestore(userId: string, technicianId: string): Promise<void> {
+  if (!userId || !technicianId) return;
+  const favId = `${userId}__${technicianId}`;
+  try {
+    await setDoc(doc(db, 'favorites', favId), {
+      id: favId,
+      userId,
+      technicianId,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `favorites/${favId}`);
+  }
+}
+
+export async function deleteFavoriteFromFirestore(userId: string, technicianId: string): Promise<void> {
+  if (!userId || !technicianId) return;
+  const favId = `${userId}__${technicianId}`;
+  try {
+    await deleteDoc(doc(db, 'favorites', favId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `favorites/${favId}`);
   }
 }
 
@@ -416,5 +618,13 @@ export async function markChatMessageReadInFirestore(messageId: string): Promise
     await updateDoc(doc(db, 'chatMessages', messageId), { isRead: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `chatMessages/${messageId}`);
+  }
+}
+
+export async function deleteChatMessageFromFirestore(messageId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'chatMessages', messageId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `chatMessages/${messageId}`);
   }
 }

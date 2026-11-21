@@ -16,6 +16,7 @@ import {
   getUserByPhoneFromFirestore,
   getUserFromFirestore,
   saveUserToFirestore,
+  subscribeToUserInFirestore,
 } from '../services/firestoreService';
 
 export interface RegisterInput {
@@ -191,6 +192,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     void ensureServerSession(currentUser);
   }, [currentUser?.id, currentUser?.role]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const unsub = subscribeToUserInFirestore(currentUser.id, (remoteUser) => {
+      if (!remoteUser) return;
+      setCurrentUser((prev) => {
+        if (!prev || prev.id !== remoteUser.id) return prev;
+        const merged = { ...prev, ...remoteUser };
+        if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+        cacheRegisteredUser(merged);
+        localStorage.setItem('kormigo_user', JSON.stringify(merged));
+        return merged;
+      });
+    });
+    return () => unsub();
+  }, [currentUser?.id]);
 
   const finalizeGoogleFirebaseUser = async (
     fbUser: FirebaseAuthUser,

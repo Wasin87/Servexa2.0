@@ -54,7 +54,10 @@ import { AvailabilityStatus, Booking, Invoice, PortfolioItem, Technician, Warran
 import { TechnicianPricingSection } from '../components/technician/TechnicianPricingSection';
 import { TechnicianWalletSection } from '../components/technician/TechnicianWalletSection';
 import { collectCashOnCompletion, fetchWalletDashboard, getStoredAuthToken, submitExtraChargeRequest, updateServerBookingStatus } from '../services/financeApi';
-import { recordCashCollectionInFirestore } from '../services/firestoreFinanceService';
+import {
+  recordCashCollectionInFirestore,
+  saveExtraChargeToFirestore,
+} from '../services/firestoreFinanceService';
 import { saveNotificationToFirestore } from '../services/firestoreService';
 import type { AdditionalChargeRequest } from '../types/finance';
 
@@ -528,14 +531,28 @@ export const TechnicianDashboard: React.FC = () => {
     if (!extraChargeBooking) return;
     setExtraChargeSubmitting(true);
     try {
-      await submitExtraChargeRequest(extraChargeBooking.id, {
-        chargeType: extraChargeType,
-        amount: extraChargeAmount,
-        reason: extraChargeReason.trim(),
-        receiptNote: extraChargeReceipt.trim() || undefined,
-      });
-
       const nowIso = new Date().toISOString();
+      const apiRes: any = getStoredAuthToken()
+        ? await submitExtraChargeRequest(extraChargeBooking.id, {
+            chargeType: extraChargeType,
+            amount: extraChargeAmount,
+            reason: extraChargeReason.trim(),
+            receiptNote: extraChargeReceipt.trim() || undefined,
+          }).catch(() => null)
+        : null;
+
+      const chargeRecord: AdditionalChargeRequest = apiRes?.charge || {
+        id: apiRes?.id || `chg-${Date.now()}`,
+        bookingId: extraChargeBooking.id,
+        technicianId: currentTech?.id || extraChargeBooking.technicianId,
+        chargeType: extraChargeType,
+        reason: extraChargeReason.trim(),
+        amount: Number(extraChargeAmount),
+        receiptNote: extraChargeReceipt.trim() || undefined,
+        status: 'PENDING_CUSTOMER',
+        createdAt: nowIso,
+      };
+      await saveExtraChargeToFirestore(chargeRecord);
       if (extraChargeBooking.customerId) {
         void saveNotificationToFirestore({
           id: `notif-xchg-cust-${Date.now()}`,

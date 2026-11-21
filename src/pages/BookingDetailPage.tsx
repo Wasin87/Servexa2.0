@@ -37,8 +37,13 @@ import {
 import {
   subscribeToFinanceTransactions,
   subscribeToCashCollections,
+  subscribeToExtraCharges,
+  respondExtraChargeInFirestore,
 } from '../services/firestoreFinanceService';
-import { saveNotificationToFirestore } from '../services/firestoreService';
+import {
+  saveNotificationToFirestore,
+  updateBookingInFirestore,
+} from '../services/firestoreService';
 import type {
   AdditionalChargeRequest,
   BookingPriceSnapshot,
@@ -81,6 +86,7 @@ export const BookingDetailPage: React.FC = () => {
   const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
   const [fsPaymentTxs, setFsPaymentTxs] = useState<PaymentTransaction[]>([]);
   const [fsCashCollection, setFsCashCollection] = useState<CashCollectionRecord | null>(null);
+  const [fsExtraCharges, setFsExtraCharges] = useState<AdditionalChargeRequest[]>([]);
 
   const booking = bookings.find((b) => b.id === id);
   const bookingWarranty = booking ? warranties.find(w => w.bookingId === booking.id) : undefined;
@@ -118,9 +124,13 @@ export const BookingDetailPage: React.FC = () => {
       const match = list.find((c) => c.bookingId === booking.id) || null;
       setFsCashCollection(match);
     });
+    const unsubExtra = subscribeToExtraCharges((list) => {
+      setFsExtraCharges(list);
+    }, booking.id);
     return () => {
       unsubTx();
       unsubCash();
+      unsubExtra();
     };
   }, [booking?.id]);
 
@@ -201,13 +211,27 @@ export const BookingDetailPage: React.FC = () => {
     setProcessingChargeId(chargeId);
     setFinanceActionMsg(null);
     try {
-      const res = await respondToExtraCharge(booking.id, chargeId, decision);
-      if (res.snapshot) setSnapshot(res.snapshot);
+      await respondExtraChargeInFirestore(
+        chargeId,
+        decision,
+        currentUser?.name || booking.customerName
+      );
+      const res = authTokenReady
+        ? await respondToExtraCharge(booking.id, chargeId, decision).catch(() => null)
+        : null;
+      if (res?.snapshot) setSnapshot(res.snapshot);
+      if (decision === 'APPROVE') {
+        const targetCharge = [...fsExtraCharges, ...extraCharges].find((c) => c.id === chargeId);
+        const nextTotal =
+          res?.snapshot?.finalAgreedAmount ??
+          ((booking.finalTotal || booking.estimatedTotalMax || 0) + (targetCharge?.amount || 0));
+        void updateBookingInFirestore(booking.id, { finalTotal: nextTotal });
+      }
       await loadFinanceData();
 
       if (booking.technicianId) {
         void saveNotificationToFirestore({
-          id: `notif-echg-resp-${Date.now()}`,
+          id: `notif-xchg-resp-${Date.now()}`,
           userId: booking.technicianId,
           role: 'TECHNICIAN',
           titleEn:
@@ -249,6 +273,11 @@ export const BookingDetailPage: React.FC = () => {
       setProcessingChargeId(null);
     }
   };
+
+  const mergedExtraCharges = [
+    ...fsExtraCharges,
+    ...extraCharges.filter((ec) => !fsExtraCharges.some((fc) => fc.id === ec.id)),
+  ];
 
   const mergedPaymentTransactions = [
     ...fsPaymentTxs,
@@ -482,7 +511,7 @@ export const BookingDetailPage: React.FC = () => {
           </div>
 
           {/* Extra Work / Material Approval Requests */}
-          {extraCharges.length > 0 && (
+          {mergedExtraCharges.length > 0 && (
             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-xs uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
@@ -490,12 +519,12 @@ export const BookingDetailPage: React.FC = () => {
                   <span>{isBangla ? 'অতিরিক্ত কাজ ও মালামালের অনুমোদন' : 'Extra Work & Material Approval Requests'}</span>
                 </h3>
                 <span className="text-[11px] font-bold text-zinc-400">
-                  {extraCharges.length}{isBangla ? 'টি' : ' items'}
+                  {mergedExtraCharges.length}{isBangla ? 'টি' : ' items'}
                 </span>
               </div>
 
               <div className="space-y-2.5">
-                {extraCharges.map((chg) => (
+                {mergedExtraCharges.map((chg) => (
                   <div
                     key={chg.id}
                     className="p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-800/40 space-y-2 text-xs"

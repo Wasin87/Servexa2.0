@@ -10,6 +10,7 @@ import {
   Clock,
   Lock,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -24,6 +25,7 @@ import {
 import {
   addPayoutAccountToFirestore,
   computeWalletFromFirestoreRecords,
+  deletePayoutAccountFromFirestore,
   requestWithdrawalInFirestore,
   submitCashDepositInFirestore,
   subscribeToCashCollections,
@@ -281,6 +283,25 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
       );
     } catch (err: any) {
       setErrorMsg(err?.message || (isBangla ? 'পেআউট অ্যাকাউন্ট যোগ করা যায়নি।' : 'Failed to add payout account.'));
+    }
+  };
+
+  const handleDeletePayoutAccount = async (pa: PayoutAccount) => {
+    setErrorMsg(null);
+    try {
+      await deletePayoutAccountFromFirestore(pa.id);
+      setServerPayoutAccounts((prev) => prev.filter((item) => item.id !== pa.id));
+      if (selectedAcctId === pa.id) {
+        const remaining = payoutAccounts.filter((item) => item.id !== pa.id);
+        setSelectedAcctId(remaining[0]?.id || '');
+      }
+      notify(
+        isBangla
+          ? `পেআউট অ্যাকাউন্ট (${pa.accountNumber}) ডাটাবেজ থেকে মুছে ফেলা হয়েছে।`
+          : `Payout account (${pa.accountNumber}) deleted from database.`
+      );
+    } catch (err: any) {
+      setErrorMsg(err?.message || (isBangla ? 'পেআউট অ্যাকাউন্ট মুছে ফেলা যায়নি।' : 'Failed to delete payout account.'));
     }
   };
 
@@ -788,24 +809,35 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
 
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {payoutAccounts.map((pa) => (
-              <div key={pa.id} className="py-2.5 flex items-center justify-between">
+              <div key={pa.id} className="py-2.5 flex items-center justify-between gap-2">
                 <div>
                   <div className="font-bold uppercase text-zinc-900 dark:text-white">
                     {pa.provider} · {pa.accountNumber}
                   </div>
                   <div className="text-[11px] text-zinc-400">{pa.accountTitle}</div>
                 </div>
-                <span
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
-                    pa.verificationStatus === 'VERIFIED'
-                      ? 'bg-emerald-500/15 text-emerald-600'
-                      : pa.verificationStatus === 'REJECTED'
-                      ? 'bg-rose-500/15 text-rose-600'
-                      : 'bg-amber-500/15 text-amber-600'
-                  }`}
-                >
-                  {formatVerificationStatus(pa.verificationStatus)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                      pa.verificationStatus === 'VERIFIED'
+                        ? 'bg-emerald-500/15 text-emerald-600'
+                        : pa.verificationStatus === 'REJECTED'
+                        ? 'bg-rose-500/15 text-rose-600'
+                        : 'bg-amber-500/15 text-amber-600'
+                    }`}
+                  >
+                    {formatVerificationStatus(pa.verificationStatus)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeletePayoutAccount(pa)}
+                    title={isBangla ? 'অ্যাকাউন্ট মুছুন' : 'Delete Account'}
+                    aria-label={isBangla ? 'অ্যাকাউন্ট মুছুন' : 'Delete Account'}
+                    className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

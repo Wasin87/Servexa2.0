@@ -300,6 +300,102 @@
         "status": { "type": "string", "maxLength": 40 }
       },
       "required": ["id", "bookingId", "technicianId", "amountCollected", "status"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "Customer favorite technician bookmark",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "technicianId"]
+    },
+    "PlatformConfig": {
+      "title": "PlatformConfig",
+      "description": "Centralized Admin rules, commission, wallet, and booking policies",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "rules": { "type": "object" },
+        "updatedAt": { "type": "string", "maxLength": 50 },
+        "updatedBy": { "type": "string", "maxLength": 150 }
+      },
+      "required": ["id", "rules", "updatedAt"]
+    },
+    "ServiceSubcategory": {
+      "title": "ServiceSubcategory",
+      "description": "Subcategory under a service category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "categoryId": { "type": "string", "maxLength": 64 },
+        "nameEn": { "type": "string", "maxLength": 150 },
+        "nameBn": { "type": "string", "maxLength": 150 },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "categoryId", "nameEn", "nameBn"]
+    },
+    "PricingRule": {
+      "title": "PricingRule",
+      "description": "Tariff bounds and customization policy for a service",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "categoryId": { "type": "string", "maxLength": 64 },
+        "subcategoryId": { "type": "string", "maxLength": 128 },
+        "defaultPrice": { "type": "number" },
+        "minPrice": { "type": "number" },
+        "maxPrice": { "type": "number" },
+        "visitingFee": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "categoryId", "defaultPrice"]
+    },
+    "TechnicianServiceConfig": {
+      "title": "TechnicianServiceConfig",
+      "description": "Technician configured service rates and approval state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "subcategoryId": { "type": "string", "maxLength": 128 },
+        "approvedPrice": { "type": "number" },
+        "status": { "type": "string", "maxLength": 40 },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "technicianId", "subcategoryId", "approvedPrice", "status"]
+    },
+    "AdditionalChargeRequest": {
+      "title": "AdditionalChargeRequest",
+      "description": "Extra work or parts charge request for a booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "technicianId": { "type": "string", "maxLength": 128 },
+        "chargeType": { "type": "string", "maxLength": 40 },
+        "reason": { "type": "string", "maxLength": 500 },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "bookingId", "technicianId", "chargeType", "amount", "status"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Governance audit trail log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "actorId": { "type": "string", "maxLength": 128 },
+        "actionType": { "type": "string", "maxLength": 100 },
+        "targetEntity": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "actorId", "actionType", "createdAt"]
     }
   },
   "firestore": {
@@ -362,6 +458,34 @@
     "/cashCollections/{collectionId}": {
       "schema": "CashCollectionRecord",
       "description": "Real-time cash on completion collections"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": "Favorite",
+      "description": "Customer favorite technicians"
+    },
+    "/platformConfig/{configId}": {
+      "schema": "PlatformConfig",
+      "description": "Centralized Admin platform rules and configuration"
+    },
+    "/subcategories/{subcategoryId}": {
+      "schema": "ServiceSubcategory",
+      "description": "Service subcategories"
+    },
+    "/pricingRules/{ruleId}": {
+      "schema": "PricingRule",
+      "description": "Service pricing and tariff rules"
+    },
+    "/technicianServices/{serviceId}": {
+      "schema": "TechnicianServiceConfig",
+      "description": "Technician per-service pricing and status"
+    },
+    "/extraCharges/{chargeId}": {
+      "schema": "AdditionalChargeRequest",
+      "description": "Booking extra work and material charge requests"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AdminAuditLog",
+      "description": "Admin rule and governance audit logs"
     }
   }
 }

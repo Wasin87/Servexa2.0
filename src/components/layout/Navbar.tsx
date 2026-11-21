@@ -11,6 +11,7 @@ import {
   Calendar,
   Layers,
   Radio,
+  Trash2,
 } from 'lucide-react';
 import { Logo } from '../common/Logo';
 import { ThemeToggle } from '../common/ThemeToggle';
@@ -22,7 +23,13 @@ import { useApp } from '../../contexts/AppContext';
 export const Navbar: React.FC = () => {
   const { t, isBangla } = useLanguage();
   const { currentUser, role, logout } = useAuth();
-  const { notifications, technicians, markNotificationRead } = useApp();
+  const {
+    notifications,
+    technicians,
+    markNotificationRead,
+    deleteNotification,
+    clearAllNotifications,
+  } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -315,22 +322,34 @@ export const Navbar: React.FC = () => {
                     onClick={() => setNotifDropdownOpen(false)}
                   />
                   <div className="absolute right-0 top-full mt-2 w-[calc(100vw-1.5rem)] sm:w-96 max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 py-2 z-[999] animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-zinc-100 dark:border-zinc-800">
                       <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100">
                         {isBangla ? 'নোটিফিকেশন' : 'Notifications'} ({unreadCount})
                       </span>
-                      {unreadCount > 0 && (
-                        <button
-                          onClick={() =>
-                            visibleNotifications.forEach(
-                              (n) => !n.isRead && markNotificationRead(n.id)
-                            )
-                          }
-                          className="text-[11px] text-orange-600 dark:text-orange-400 hover:underline cursor-pointer"
-                        >
-                          {isBangla ? 'সব পড়া হয়েছে' : 'Mark all read'}
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2.5">
+                        {unreadCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              visibleNotifications.forEach(
+                                (n) => !n.isRead && markNotificationRead(n.id)
+                              )
+                            }
+                            className="text-[11px] text-orange-600 dark:text-orange-400 hover:underline cursor-pointer"
+                          >
+                            {isBangla ? 'সব পড়া হয়েছে' : 'Mark all read'}
+                          </button>
+                        )}
+                        {visibleNotifications.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => clearAllNotifications()}
+                            className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                          >
+                            {isBangla ? 'সব মুছুন' : 'Clear all'}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="max-h-72 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60">
@@ -342,7 +361,7 @@ export const Navbar: React.FC = () => {
                         visibleNotifications.map((n) => (
                           <div
                             key={n.id}
-                            className={`p-3 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors ${
+                            className={`p-3 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors relative group ${
                               !n.isRead ? 'bg-orange-50/40 dark:bg-orange-950/20' : ''
                             }`}
                             onClick={() => {
@@ -351,8 +370,22 @@ export const Navbar: React.FC = () => {
                               if (n.link) navigate(n.link);
                             }}
                           >
-                            <div className="font-semibold text-zinc-900 dark:text-zinc-100 mb-0.5">
-                              {isBangla ? n.titleBn : n.titleEn}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="font-semibold text-zinc-900 dark:text-zinc-100 mb-0.5 pr-1">
+                                {isBangla ? n.titleBn : n.titleEn}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteNotification(n.id);
+                                }}
+                                title={isBangla ? 'নোটিফিকেশন মুছুন' : 'Delete notification'}
+                                aria-label={isBangla ? 'নোটিফিকেশন মুছুন' : 'Delete notification'}
+                                className="p-1 rounded-md text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 shrink-0 cursor-pointer transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                             <div className="text-zinc-600 dark:text-zinc-400 text-[11px] leading-relaxed">
                               {isBangla ? n.messageBn : n.messageEn}

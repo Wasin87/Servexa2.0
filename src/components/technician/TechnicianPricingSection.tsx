@@ -9,6 +9,7 @@ import {
   Save,
   ToggleLeft,
   ToggleRight,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -20,6 +21,14 @@ import {
   toggleTechnicianServiceActive,
   updateTechnicianServicePricing,
 } from '../../services/financeApi';
+import {
+  subscribeToTechnicianServices,
+  saveTechnicianServiceToFirestore,
+  deleteTechnicianServiceFromFirestore,
+  subscribeToSubcategories,
+  subscribeToPricingRules,
+  subscribeToPlatformRules,
+} from '../../services/firestoreFinanceService';
 import type {
   PricingRule,
   ServiceSubcategory,
@@ -35,9 +44,12 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
   const { authTokenReady, currentUser } = useAuth();
   const { isBangla } = useLanguage();
   const [services, setServices] = useState<TechnicianServiceConfig[]>([]);
+  const [fsServices, setFsServices] = useState<TechnicianServiceConfig[]>([]);
   const [history, setHistory] = useState<TechnicianPriceHistoryItem[]>([]);
   const [subcategories, setSubcategories] = useState<ServiceSubcategory[]>([]);
+  const [fsSubcategories, setFsSubcategories] = useState<ServiceSubcategory[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [fsPricingRules, setFsPricingRules] = useState<PricingRule[]>([]);
   const [publicRules, setPublicRules] = useState<any>(null);
 
   const [selectedSubToAdd, setSelectedSubToAdd] = useState<string>('');
@@ -85,6 +97,37 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
     }
   };
 
+  useEffect(() => {
+    const u1 = subscribeToTechnicianServices((list) => {
+      setFsServices(list);
+      setEdits((prev) => {
+        const next = { ...prev };
+        for (const s of list) {
+          if (!next[s.id]) {
+            next[s.id] = {
+              price: s.pendingPrice ?? s.approvedPrice,
+              visitingFee: s.pendingVisitingFee ?? s.approvedVisitingFee,
+              hourlyRate: s.pendingHourlyRate ?? s.approvedHourlyRate,
+              emergencyCharge: s.pendingEmergencyCharge ?? s.approvedEmergencyCharge,
+            };
+          }
+        }
+        return next;
+      });
+    }, technicianId);
+    const u2 = subscribeToSubcategories((subs) => setFsSubcategories(subs));
+    const u3 = subscribeToPricingRules((rules) => setFsPricingRules(rules));
+    const u4 = subscribeToPlatformRules((rules) => {
+      if (rules) setPublicRules(rules);
+    });
+    return () => {
+      u1();
+      u2();
+      u3();
+      u4();
+    };
+  }, [technicianId]);
+
   const loadData = async () => {
     if (!authTokenReady) return;
     setLoading(true);
@@ -111,7 +154,7 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
           emergencyCharge: s.pendingEmergencyCharge ?? s.approvedEmergencyCharge,
         };
       }
-      setEdits(initialEdits);
+      setEdits((prev) => ({ ...initialEdits, ...prev }));
 
       const unadded = (catRes.subcategories || []).find(
         (sub) => !(techRes.services || []).some((s) => s.subcategoryId === sub.id)
@@ -132,15 +175,50 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
     void loadData();
   }, [technicianId, authTokenReady, currentUser?.id]);
 
+  const mergedSubcategories = [
+    ...fsSubcategories,
+    ...subcategories.filter((s) => !fsSubcategories.some((fs) => fs.id === s.id)),
+  ];
+  const mergedPricingRules = [
+    ...fsPricingRules,
+    ...pricingRules.filter((r) => !fsPricingRules.some((fr) => fr.id === r.id)),
+  ];
+  const mergedServices = [
+    ...fsServices,
+    ...services.filter((s) => !fsServices.some((fs) => fs.id === s.id)),
+  ];
+
   const handleAddService = async () => {
     if (!selectedSubToAdd) return;
     setErrorMsg(null);
     try {
-      await selectTechnicianService(selectedSubToAdd);
+      const apiRes: any = await selectTechnicianService(selectedSubToAdd).catch(() => null);
+      const sub = mergedSubcategories.find((s) => s.id === selectedSubToAdd);
+      const rule = mergedPricingRules.find((r) => r.subcategoryId === selectedSubToAdd || r.id === sub?.pricingRuleId);
+      const newSvc: TechnicianServiceConfig = apiRes?.service || {
+        id: `${technicianId}__${selectedSubToAdd}`,
+        technicianId,
+        categoryId: sub?.categoryId || rule?.categoryId || 'electrical',
+        subcategoryId: selectedSubToAdd,
+        pricingRuleId: rule?.id || sub?.pricingRuleId || '',
+        serviceTitleEn: sub?.nameEn || rule?.serviceTitleEn || 'Service',
+        serviceTitleBn: sub?.nameBn || rule?.serviceTitleBn || 'সার্ভিস',
+        approvedPrice: rule?.defaultPrice || 500,
+        approvedVisitingFee: rule?.visitingFee || 200,
+        approvedHourlyRate: rule?.hourlyRate || 300,
+        approvedAdditionalHourCharge: rule?.additionalHourCharge || 200,
+        approvedEmergencyCharge: rule?.emergencyCharge || 250,
+        approvedNightCharge: rule?.nightCharge || 150,
+        approvedWeekendCharge: rule?.weekendCharge || 100,
+        status: 'DEFAULT_PRICE',
+        active: true,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveTechnicianServiceToFirestore(newSvc);
       notify(
         isBangla
-          ? 'সার্ভিসটি অ্যাডমিনের ডিফল্ট রেটসহ স্বয়ংক্রিয়ভাবে যুক্ত হয়েছে।'
-          : 'Service added with Admin default pricing loaded automatically.'
+          ? 'সার্ভিসটি অ্যাডমিনের ডিফল্ট রেটসহ ফায়ারবেসে যুক্ত হয়েছে।'
+          : 'Service added with Admin default pricing & synced to Firebase.'
       );
       void loadData();
     } catch (err: any) {
@@ -153,20 +231,48 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
     if (!draft) return;
     setErrorMsg(null);
     try {
-      const res = await updateTechnicianServicePricing(svc.id, {
+      const rule = mergedPricingRules.find((r) => r.id === svc.pricingRuleId);
+      const res: any = await updateTechnicianServicePricing(svc.id, {
         price: draft.price,
         visitingFee: draft.visitingFee,
         hourlyRate: draft.hourlyRate,
         emergencyCharge: draft.emergencyCharge,
-      });
+      }).catch(() => ({ needsApproval: Boolean(rule?.requiresPriceApproval) }));
+
+      const needsApproval = Boolean(res?.needsApproval);
+      const updatedSvc: TechnicianServiceConfig = {
+        ...svc,
+        ...(needsApproval
+          ? {
+              pendingPrice: draft.price,
+              pendingVisitingFee: draft.visitingFee,
+              pendingHourlyRate: draft.hourlyRate,
+              pendingEmergencyCharge: draft.emergencyCharge,
+              status: 'PENDING_APPROVAL',
+            }
+          : {
+              approvedPrice: draft.price,
+              approvedVisitingFee: draft.visitingFee,
+              approvedHourlyRate: draft.hourlyRate,
+              approvedEmergencyCharge: draft.emergencyCharge,
+              pendingPrice: null,
+              pendingVisitingFee: null,
+              pendingHourlyRate: null,
+              pendingEmergencyCharge: null,
+              status: 'CUSTOMIZED_PRICE',
+            }),
+        updatedAt: new Date().toISOString(),
+      };
+      await saveTechnicianServiceToFirestore(updatedSvc);
+
       notify(
-        res.needsApproval
+        needsApproval
           ? isBangla
-            ? 'নতুন মূল্য অ্যাডমিন অনুমোদনের জন্য পাঠানো হয়েছে। অনুমোদন না হওয়া পর্যন্ত পূর্বের অনুমোদিত রেট প্রদর্শিত হবে।'
-            : 'Price submitted for Admin Approval. Customers will see your existing approved rate until approved.'
+            ? 'নতুন মূল্য অ্যাডমিন অনুমোদনের জন্য ফায়ারবেসে পাঠানো হয়েছে।'
+            : 'Price submitted to Firebase for Admin Approval.'
           : isBangla
-            ? 'অ্যাডমিন অনুমোদিত সীমার মধ্যে সার্ভিস মূল্য সফলভাবে আপডেট ও সক্রিয় হয়েছে!'
-            : 'Service price updated & active within Admin permitted range!'
+            ? 'সার্ভিস মূল্য সফলভাবে ফায়ারবেসে আপডেট ও সক্রিয় হয়েছে!'
+            : 'Service price updated in Firebase & active!'
       );
       void loadData();
     } catch (err: any) {
@@ -179,7 +285,13 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
 
   const handleToggleActive = async (svc: TechnicianServiceConfig) => {
     try {
-      await toggleTechnicianServiceActive(svc.id, !svc.active);
+      await toggleTechnicianServiceActive(svc.id, !svc.active).catch(() => null);
+      await saveTechnicianServiceToFirestore({
+        ...svc,
+        active: !svc.active,
+        status: !svc.active ? 'CUSTOMIZED_PRICE' : 'INACTIVE',
+        updatedAt: new Date().toISOString(),
+      });
       notify(
         svc.active
           ? isBangla
@@ -195,8 +307,23 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
     }
   };
 
+  const handleDeleteService = async (svc: TechnicianServiceConfig) => {
+    setErrorMsg(null);
+    try {
+      await deleteTechnicianServiceFromFirestore(svc.id);
+      setServices((prev) => prev.filter((item) => item.id !== svc.id));
+      notify(
+        isBangla
+          ? `"${svc.serviceTitleBn || svc.serviceTitleEn}" ফায়ারবেস থেকে মুছে ফেলা হয়েছে।`
+          : `"${svc.serviceTitleEn}" removed from Firebase.`
+      );
+    } catch (err: any) {
+      setErrorMsg(err?.message || (isBangla ? 'সার্ভিস মুছে ফেলা যায়নি।' : 'Failed to remove service.'));
+    }
+  };
+
   const globalCustomAllowed = publicRules?.general?.allowPriceCustomization !== false;
-  const unconfiguredSubs = subcategories.filter((sub) => !services.some((s) => s.subcategoryId === sub.id));
+  const unconfiguredSubs = mergedSubcategories.filter((sub) => !mergedServices.some((s) => s.subcategoryId === sub.id));
 
   if (loading && services.length === 0) {
     return (
@@ -271,8 +398,8 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
 
         {/* Services List */}
         <div className="space-y-4">
-          {services.map((svc) => {
-            const rule = pricingRules.find((r) => r.id === svc.pricingRuleId);
+          {mergedServices.map((svc) => {
+            const rule = mergedPricingRules.find((r) => r.id === svc.pricingRuleId);
             const isLocked =
               !globalCustomAllowed ||
               rule?.customizationPermission === 'FIXED_NO_CUSTOMIZATION' ||
@@ -326,6 +453,16 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
                     >
                       {svc.active ? <ToggleRight className="w-4 h-4 text-emerald-600" /> : <ToggleLeft className="w-4 h-4 text-zinc-400" />}
                       <span>{svc.active ? (isBangla ? 'সক্রিয়' : 'Active') : (isBangla ? 'নিষ্ক্রিয়' : 'Inactive')}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteService(svc)}
+                      title={isBangla ? 'সার্ভিস মুছুন' : 'Delete Service'}
+                      aria-label={isBangla ? 'সার্ভিস মুছুন' : 'Delete Service'}
+                      className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/50 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -414,7 +551,7 @@ export const TechnicianPricingSection: React.FC<Props> = ({ technicianId }) => {
           </h4>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800 max-h-60 overflow-y-auto">
             {history.map((h) => {
-              const matchedSvc = services.find((s) => s.serviceTitleEn === h.serviceTitleEn);
+              const matchedSvc = mergedServices.find((s) => s.serviceTitleEn === h.serviceTitleEn);
               const historyTitle = isBangla ? (matchedSvc?.serviceTitleBn || h.serviceTitleEn) : h.serviceTitleEn;
               const fieldLabel =
                 h.field === 'SERVICE_PRICE'

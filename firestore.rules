@@ -115,6 +115,55 @@ service cloud.firestore {
       allow delete: if isValidId(collectionId);
     }
 
+    match /favorites/{favoriteId} {
+      allow read: if true;
+      allow create, update: if isValidId(favoriteId)
+        && request.resource.data.keys().hasAll(['id', 'userId', 'technicianId']);
+      allow delete: if isValidId(favoriteId);
+    }
+
+    match /platformConfig/{configId} {
+      allow read: if true;
+      allow create, update: if isValidId(configId)
+        && request.resource.data.keys().hasAll(['id', 'rules', 'updatedAt']);
+      allow delete: if isValidId(configId);
+    }
+
+    match /subcategories/{subcategoryId} {
+      allow read: if true;
+      allow create, update: if isValidId(subcategoryId)
+        && request.resource.data.keys().hasAll(['id', 'categoryId', 'nameEn', 'nameBn']);
+      allow delete: if isValidId(subcategoryId);
+    }
+
+    match /pricingRules/{ruleId} {
+      allow read: if true;
+      allow create, update: if isValidId(ruleId)
+        && request.resource.data.keys().hasAll(['id', 'categoryId', 'defaultPrice']);
+      allow delete: if isValidId(ruleId);
+    }
+
+    match /technicianServices/{serviceId} {
+      allow read: if true;
+      allow create, update: if isValidId(serviceId)
+        && request.resource.data.keys().hasAll(['id', 'technicianId', 'subcategoryId', 'approvedPrice', 'status']);
+      allow delete: if isValidId(serviceId);
+    }
+
+    match /extraCharges/{chargeId} {
+      allow read: if true;
+      allow create, update: if isValidId(chargeId)
+        && request.resource.data.keys().hasAll(['id', 'bookingId', 'technicianId', 'chargeType', 'amount', 'status']);
+      allow delete: if isValidId(chargeId);
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if true;
+      allow create, update: if isValidId(logId)
+        && request.resource.data.keys().hasAll(['id', 'actorId', 'actionType', 'createdAt']);
+      allow delete: if isValidId(logId);
+    }
+
     match /test/{docId} {
       allow read: if true;
       allow write: if isValidId(docId);
