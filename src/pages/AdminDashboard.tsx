@@ -56,11 +56,11 @@ export const AdminDashboard: React.FC = () => {
     deleteTechnician
   } = useApp();
   const { t, isBangla } = useLanguage();
-  const { authTokenReady, currentUser } = useAuth();
+  const { authTokenReady, currentUser, updateProfile } = useAuth();
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const validTabs = ['overview', 'bookings', 'fleet_map', 'disputes', 'warranties', 'categories', 'rules', 'finance'] as const;
+  const validTabs = ['overview', 'bookings', 'fleet_map', 'disputes', 'warranties', 'categories', 'rules', 'finance', 'profile'] as const;
   const resolveTabFromLocation = (): typeof validTabs[number] => {
     const tabParam = searchParams.get('tab');
     if (tabParam && validTabs.includes(tabParam as any)) {
@@ -72,7 +72,26 @@ export const AdminDashboard: React.FC = () => {
     return 'overview';
   };
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'fleet_map' | 'disputes' | 'warranties' | 'categories' | 'rules' | 'finance'>(resolveTabFromLocation);
+  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'fleet_map' | 'disputes' | 'warranties' | 'categories' | 'rules' | 'finance' | 'profile'>(resolveTabFromLocation);
+  const [adminName, setAdminName] = useState(currentUser?.name || 'Wasin Ahmed');
+  const [adminPhone, setAdminPhone] = useState(currentUser?.phone || '+8801700000000');
+  const [adminAvatar, setAdminAvatar] = useState(currentUser?.avatar || '');
+  const [adminCity, setAdminCity] = useState(currentUser?.city || 'Dhaka');
+  const [adminArea, setAdminArea] = useState(currentUser?.area || 'Uttara');
+  const [profileToast, setProfileToast] = useState<string | null>(null);
+
+  const handleSaveAdminProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateProfile({
+      name: adminName.trim(),
+      phone: adminPhone.trim(),
+      avatar: adminAvatar.trim(),
+      city: adminCity.trim(),
+      area: adminArea.trim()
+    });
+    setProfileToast(isBangla ? 'অ্যাডমিন প্রোফাইল সফলভাবে আপডেট হয়েছে!' : 'Admin profile successfully updated!');
+    setTimeout(() => setProfileToast(null), 4000);
+  };
   const [techSearch, setTechSearch] = useState('');
   const [bookingFilterStatus, setBookingFilterStatus] = useState<string>('ALL');
   const [techToDelete, setTechToDelete] = useState<Technician | null>(null);
@@ -227,6 +246,11 @@ export const AdminDashboard: React.FC = () => {
           label: isBangla ? 'ক্যাটাগরি ও রেট কার্ড' : 'Categories & Tariffs',
           icon: <Layers className="w-4 h-4" />,
           count: categories.length
+        },
+        {
+          id: 'profile',
+          label: isBangla ? 'অ্যাডমিন প্রোফাইল এডিট' : 'Admin Profile Edit',
+          icon: <Users className="w-4 h-4" />
         }
       ]
     }
@@ -280,6 +304,12 @@ export const AdminDashboard: React.FC = () => {
       subtitle: isBangla
         ? 'প্রতিটি সার্ভিস ক্যাটাগরির প্রারম্ভিক মূল্য এবং সক্রিয় টেকনিশিয়ান কাভারেজ দেখুন।'
         : 'Monitor service category baseline pricing and active technician distribution.'
+    },
+    profile: {
+      title: isBangla ? 'অ্যাডমিন প্রোফাইল ও সিকিউরিটি সেটিংস' : 'Admin Profile & Security Settings',
+      subtitle: isBangla
+        ? 'আপনার অ্যাডমিন নাম, ফোন, ইমেইল, ছবি এবং পাসওয়ার্ড রিয়েল-টাইমে আপডেট করুন।'
+        : 'Manage your admin credentials, profile photo, contact info, and security credentials.'
     }
   };
 
@@ -950,6 +980,119 @@ export const AdminDashboard: React.FC = () => {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* TAB 8: ADMIN PROFILE EDIT */}
+      {activeTab === 'profile' && (
+        <div className="max-w-2xl bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-xs space-y-6">
+          <div className="flex items-center gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+            {adminAvatar ? (
+              <img src={adminAvatar} alt={adminName} className="w-16 h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0" />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-orange-600 text-white font-black text-xl flex items-center justify-center border-2 border-orange-500 shadow-sm shrink-0">
+                {(adminName || 'A').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <h3 className="text-base font-black text-zinc-900 dark:text-white">{adminName}</h3>
+              <p className="text-xs text-zinc-500">{currentUser?.email} · <span className="text-orange-600 font-bold">System Administrator</span></p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveAdminProfile} className="space-y-4 text-xs">
+            <div>
+              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                {isBangla ? 'অ্যাডমিনের নাম (Full Name)' : 'Admin Full Name'}
+              </label>
+              <input
+                type="text"
+                required
+                value={adminName}
+                onChange={(e) => setAdminName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'ইমেইল (Read-only)' : 'Email (Read-only)'}
+                </label>
+                <input
+                  type="email"
+                  disabled
+                  value={currentUser?.email || ''}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'মোবাইল নম্বর' : 'Phone Number'}
+                </label>
+                <input
+                  type="text"
+                  value={adminPhone}
+                  onChange={(e) => setAdminPhone(e.target.value)}
+                  placeholder="+8801700000000"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'শহর / জেলা' : 'City / District'}
+                </label>
+                <input
+                  type="text"
+                  value={adminCity}
+                  onChange={(e) => setAdminCity(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'এলাকা' : 'Area'}
+                </label>
+                <input
+                  type="text"
+                  value={adminArea}
+                  onChange={(e) => setAdminArea(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                {isBangla ? 'প্রোফাইল ছবির URL (Avatar URL)' : 'Profile Photo URL (Avatar)'}
+              </label>
+              <input
+                type="text"
+                value={adminAvatar}
+                onChange={(e) => setAdminAvatar(e.target.value)}
+                placeholder="https://images.unsplash.com/..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-[11px]"
+              />
+            </div>
+
+            {profileToast && (
+              <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-bold">
+                ✓ {profileToast}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-3">
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black shadow-md cursor-pointer"
+              >
+                {isBangla ? 'প্রোফাইল পরিবর্তন সংরক্ষণ করুন' : 'Save Profile Changes'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

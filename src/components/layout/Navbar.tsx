@@ -67,7 +67,7 @@ export const Navbar: React.FC = () => {
 
   const getProfileLink = () => {
     if (role === 'TECHNICIAN') return '/technician/dashboard?tab=profile';
-    if (role === 'ADMIN') return '/admin/dashboard?tab=overview';
+    if (role === 'ADMIN') return '/admin/dashboard?tab=profile';
     return '/customer/dashboard?tab=profile';
   };
 
