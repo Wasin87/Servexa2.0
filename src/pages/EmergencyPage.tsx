@@ -1,15 +1,23 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Clock, Zap, Droplets, Key, Wind, PhoneCall, ShieldAlert, CheckCircle2, ArrowRight } from 'lucide-react';
+import { AlertTriangle, Zap, Droplets, Key, Wind, ArrowRight, MapPin } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import {
+  BANGLADESH_DIVISIONS,
+  BANGLADESH_DISTRICTS,
+  getDistrictsByDivision,
+  findDistrict,
+} from '../data/bangladeshLocations';
 
 export const EmergencyPage: React.FC = () => {
-  const { categories, technicians } = useApp();
-  const { t, isBangla } = useLanguage();
+  const { technicians } = useApp();
+  const { isBangla } = useLanguage();
   const navigate = useNavigate();
 
   const [emergencyType, setEmergencyType] = useState<string>('electrical');
+  const [selectedDivision, setSelectedDivision] = useState<string>('Dhaka');
+  const [selectedDistrict, setSelectedDistrict] = useState<string>('Dhaka');
   const [selectedArea, setSelectedArea] = useState<string>('Mirpur');
   const [problemBrief, setProblemBrief] = useState<string>('');
 
@@ -20,7 +28,7 @@ export const EmergencyPage: React.FC = () => {
       labelBn: 'বৈদ্যুতিক শর্ট সার্কিট / আগুন ঝুঁকি',
       labelEn: 'Electrical Short Circuit / Fire Risk',
       descBn: 'মেইন ব্রেকার স্পার্ক, পোড়া গন্ধ বা পুরো বাসা বিদ্যুৎহীন হয়ে যাওয়া',
-      descEn: 'Main breaker sparking, burning odor, or total sudden home blackout'
+      descEn: 'Main breaker sparking, burning odor, or total sudden home blackout',
     },
     {
       id: 'plumbing',
@@ -28,7 +36,7 @@ export const EmergencyPage: React.FC = () => {
       labelBn: 'পানির পাইপ ফেটে মেঝে ডুবে যাওয়া',
       labelEn: 'Severe Pipe Burst / Flooding',
       descBn: 'পানির পাইপ বা ভালভ ফেটে বেসিন বা বাথরুমে তীব্র পানির স্রোত',
-      descEn: 'High-pressure water pipe rupture, flooding kitchen or bathroom'
+      descEn: 'High-pressure water pipe rupture, flooding kitchen or bathroom',
     },
     {
       id: 'locksmith',
@@ -36,7 +44,7 @@ export const EmergencyPage: React.FC = () => {
       labelBn: 'দরজায় তালা আটকে বাইরে বন্দি',
       labelEn: 'Locked Out / Broken Key Emergency',
       descBn: 'চাবি ভেঙে লক আটকে গেছে বা ঘরের ভেতরে বাচ্চা আটকা পড়েছে',
-      descEn: 'Key snapped inside lock mechanism or child locked inside room'
+      descEn: 'Key snapped inside lock mechanism or child locked inside room',
     },
     {
       id: 'ac_repair',
@@ -44,29 +52,29 @@ export const EmergencyPage: React.FC = () => {
       labelBn: 'এসি বা ফ্রিজ তীব্র গোলযোগ',
       labelEn: 'AC / Refrigerator Severe Failure',
       descBn: 'কম্প্রেসার থেকে অস্বাভাবিক ধোঁয়া, বিকট শব্দ বা গ্যাস লিক হওয়া',
-      descEn: 'Severe gas leak, toxic chemical smell, or compressor sparking'
+      descEn: 'Severe gas leak, toxic chemical smell, or compressor sparking',
     },
   ];
 
-  const dhakaAreas = [
-    { value: 'Mirpur', labelBn: 'মিরপুর (Mirpur)', labelEn: 'Mirpur' },
-    { value: 'Dhanmondi', labelBn: 'ধানমন্ডি (Dhanmondi)', labelEn: 'Dhanmondi' },
-    { value: 'Uttara', labelBn: 'উত্তরা (Uttara)', labelEn: 'Uttara' },
-    { value: 'Mohammadpur', labelBn: 'মোহাম্মদপুর (Mohammadpur)', labelEn: 'Mohammadpur' },
-    { value: 'Gulshan', labelBn: 'গুলশান (Gulshan)', labelEn: 'Gulshan' },
-    { value: 'Banani', labelBn: 'বনানী (Banani)', labelEn: 'Banani' },
-    { value: 'Farmgate', labelBn: 'ফার্মগেট (Farmgate)', labelEn: 'Farmgate' },
-    { value: 'Badda', labelBn: 'বাড্ডা (Badda)', labelEn: 'Badda' },
-    { value: 'Old Dhaka', labelBn: 'পুরান ঢাকা (Old Dhaka)', labelEn: 'Old Dhaka' }
-  ];
+  const districtsInDivision = getDistrictsByDivision(selectedDivision);
+  const activeDistrictObj = findDistrict(selectedDistrict) || districtsInDivision[0] || BANGLADESH_DISTRICTS[0];
+  const areasInDistrict = activeDistrictObj.areas;
 
   // Filter technicians available for emergency
   const availablePros = technicians
-    .filter(t => t.skills.includes(emergencyType))
+    .filter((t) => t.skills.includes(emergencyType))
     .slice(0, 3);
 
   const handleEmergencyDispatch = (techId: string) => {
-    navigate(`/book?techId=${techId}&categoryId=${emergencyType}&emergency=true&desc=${encodeURIComponent(problemBrief || (isBangla ? '🚨 জরুরি অনুরোধ: ' : '🚨 Emergency Request: ') + emergencyType)}`);
+    navigate(
+      `/book?techId=${techId}&categoryId=${emergencyType}&emergency=true&division=${encodeURIComponent(
+        selectedDivision
+      )}&district=${encodeURIComponent(selectedDistrict)}&area=${encodeURIComponent(
+        selectedArea
+      )}&desc=${encodeURIComponent(
+        problemBrief || (isBangla ? '🚨 জরুরি অনুরোধ: ' : '🚨 Emergency Request: ') + emergencyType
+      )}`
+    );
   };
 
   return (
@@ -134,42 +142,100 @@ export const EmergencyPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Step 2: Location and details */}
+      {/* Step 2: All-Bangladesh Location Selector & Situation Overview */}
       <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-        <h2 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">
-          {isBangla ? '২. আপনার এলাকা ও সংক্ষিপ্ত পরিস্থিতি' : '2. Your Location & Situation Overview'}
+        <h2 className="text-sm sm:text-base font-black text-zinc-900 dark:text-white flex items-center gap-2">
+          <MapPin className="w-4 h-4 text-rose-600" />
+          <span>{isBangla ? '২. আপনার এলাকা ও সংরক্ষিত পরিস্থিতি (সারা বাংলাদেশ)' : '2. Your Location & Situation Overview (All Bangladesh)'}</span>
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
+          {/* Division */}
           <div>
-            <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              {isBangla ? 'এলাকা (ঢাকা)' : 'Area (Dhaka)'}
+            <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+              {isBangla ? 'বিভাগ (Division)' : 'Division'}
             </label>
             <select
-              value={selectedArea}
-              onChange={(e) => setSelectedArea(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500/50"
+              value={selectedDivision}
+              onChange={(e) => {
+                const div = e.target.value;
+                setSelectedDivision(div);
+                const matchedDistricts = getDistrictsByDivision(div);
+                const firstDist = matchedDistricts[0] || BANGLADESH_DISTRICTS[0];
+                setSelectedDistrict(firstDist.nameEn);
+                setSelectedArea(firstDist.areas[0]?.nameEn || firstDist.nameEn);
+              }}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500/50 cursor-pointer"
             >
-              {dhakaAreas.map(a => (
-                <option key={a.value} value={a.value}>
-                  {isBangla ? a.labelBn : a.labelEn}
+              {BANGLADESH_DIVISIONS.map((div) => (
+                <option key={div.id} value={div.nameEn}>
+                  {isBangla ? `${div.nameBn} (${div.nameEn})` : div.nameEn}
                 </option>
               ))}
             </select>
           </div>
 
+          {/* District */}
           <div>
-            <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              {isBangla ? 'পরিস্থিতি সংক্ষেপে লিখুন (ঐচ্ছিক)' : 'Briefly Describe Situation (Optional)'}
+            <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+              {isBangla ? 'জেলা (District)' : 'District'}
             </label>
-            <input
-              type="text"
-              value={problemBrief}
-              onChange={(e) => setProblemBrief(e.target.value)}
-              placeholder={isBangla ? 'যেমন: মেইন সুইচে স্পার্ক করছে বা ধোঁয়া উঠছে...' : 'e.g. Main switch sparking or bathroom flooding...'}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
-            />
+            <select
+              value={selectedDistrict}
+              onChange={(e) => {
+                const distName = e.target.value;
+                setSelectedDistrict(distName);
+                const distObj = findDistrict(distName);
+                if (distObj && distObj.areas.length > 0) {
+                  setSelectedArea(distObj.areas[0].nameEn);
+                }
+              }}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500/50 cursor-pointer"
+            >
+              {districtsInDivision.map((dist) => (
+                <option key={dist.id} value={dist.nameEn}>
+                  {isBangla ? `${dist.nameBn} (${dist.nameEn})` : dist.nameEn}
+                </option>
+              ))}
+            </select>
           </div>
+
+          {/* Searchable / Typeable Area */}
+          <div>
+            <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+              {isBangla ? 'এলাকা (সিলেক্ট বা টাইপ করুন)' : 'Area (Select or Type)'}
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                list="district-areas-list"
+                value={selectedArea}
+                onChange={(e) => setSelectedArea(e.target.value)}
+                placeholder={isBangla ? 'এলাকার নাম লিখুন বা ড্রপডাউন থেকে নিন...' : 'Type or pick area...'}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500/50"
+              />
+              <datalist id="district-areas-list">
+                {areasInDistrict.map((ar) => (
+                  <option key={ar.nameEn} value={ar.nameEn}>
+                    {isBangla ? `${ar.nameBn} (${ar.nameEn})` : ar.nameEn}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+            {isBangla ? 'পরিস্থিতি সংক্ষেপে লিখুন (ঐচ্ছিক)' : 'Briefly Describe Situation (Optional)'}
+          </label>
+          <input
+            type="text"
+            value={problemBrief}
+            onChange={(e) => setProblemBrief(e.target.value)}
+            placeholder={isBangla ? 'যেমন: মেইন সুইচে স্পার্ক করছে বা ধোঁয়া উঠছে...' : 'e.g. Main switch sparking or bathroom flooding...'}
+            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
+          />
         </div>
       </div>
 
@@ -209,7 +275,7 @@ export const EmergencyPage: React.FC = () => {
                       {tech.name}
                     </h3>
                     <div className="text-[11px] text-zinc-500 mt-0.5">
-                      {tech.primaryArea}, {isBangla ? 'ঢাকা' : 'Dhaka'}
+                      {selectedArea || tech.primaryArea}, {selectedDistrict}
                     </div>
                     <div className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />

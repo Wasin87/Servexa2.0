@@ -10,15 +10,20 @@ import {
   ChevronRight,
   Lock,
   Clock,
+  Award,
+  Check,
+  X,
+  ArrowRight,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { toBengaliNumber } from '../utils/geoUtils';
 import { BANGLADESH_DISTRICTS } from '../data/bangladeshLocations';
+import { CompareModal } from '../components/common/CompareModal';
 
 export const ProfessionalsPage: React.FC = () => {
-  const { technicians, categories } = useApp();
+  const { technicians, categories, comparedTechIds, addToCompare, removeFromCompare } = useApp();
   const { t, isBangla } = useLanguage();
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -35,6 +40,7 @@ export const ProfessionalsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'rating' | 'price' | 'jobs' | 'experience'>('rating');
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [compareModalOpen, setCompareModalOpen] = useState<boolean>(false);
 
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
@@ -121,9 +127,9 @@ export const ProfessionalsPage: React.FC = () => {
   const endIndexNumber = Math.min(safeCurrentPage * itemsPerPage, filteredTechnicians.length);
 
   return (
-    <div className="py-6 sm:py-10 max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
+    <div className="py-6 sm:py-10 max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 space-y-4">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 sm:mb-8 gap-4">
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-2 gap-4">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-bold mb-1.5">
             <Sparkles className="w-3.5 h-3.5 text-orange-500" />
@@ -141,7 +147,7 @@ export const ProfessionalsPage: React.FC = () => {
       </div>
 
       {!isAuthenticated && (
-        <div className="mb-6 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="mb-2 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-semibold">
             <Lock className="w-4 h-4 shrink-0" />
             <span>
@@ -156,6 +162,48 @@ export const ProfessionalsPage: React.FC = () => {
           >
             {isBangla ? 'লগইন করুন' : 'Sign In'}
           </Link>
+        </div>
+      )}
+
+      {/* Compare Selection Bar Above Filter Card */}
+      {comparedTechIds.length > 0 && (
+        <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-700 text-white shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Award className="w-4 h-4 text-amber-200 shrink-0" />
+            <span className="font-black">
+              {isBangla ? `তুলনার জন্য নির্বাচিত (${comparedTechIds.length}/৫):` : `Selected for Comparison (${comparedTechIds.length}/5):`}
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {comparedTechIds.map((id) => {
+                const tech = technicians.find((t) => t.id === id);
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/25 backdrop-blur-md font-bold text-[11px]"
+                  >
+                    <span>{tech?.name || id}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFromCompare(id)}
+                      className="hover:text-rose-200 cursor-pointer"
+                      title="সরিয়ে ফেলুন"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setCompareModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-zinc-900 text-white font-black hover:bg-zinc-800 transition-colors shadow-md cursor-pointer flex items-center gap-1.5 shrink-0"
+          >
+            <span>{isBangla ? `তুলনা করুন (${comparedTechIds.length})` : `Compare Now (${comparedTechIds.length})`}</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -246,6 +294,8 @@ export const ProfessionalsPage: React.FC = () => {
                 ? 'সাধারণ টেকনিশিয়ান'
                 : 'General Technician';
 
+            const isCompared = comparedTechIds.includes(tech.id);
+
             return (
               <div
                 key={tech.id}
@@ -295,46 +345,68 @@ export const ProfessionalsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Book Now & Profile Buttons — Strictly Disabled Until Logged In */}
-                <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    disabled={!isAuthenticated}
-                    aria-disabled={!isAuthenticated}
-                    onClick={
-                      isAuthenticated ? () => navigate(`/book?techId=${tech.id}`) : undefined
-                    }
-                    className={`py-2.5 px-3 text-center text-xs font-bold rounded-xl transition-all inline-flex items-center justify-center gap-1.5 ${
-                      isAuthenticated
-                        ? 'bg-orange-600 hover:bg-orange-500 text-white shadow-xs cursor-pointer active:scale-98'
-                        : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed pointer-events-none select-none opacity-75'
-                    }`}
-                  >
-                    {!isAuthenticated && <Lock className="w-3 h-3 shrink-0" />}
-                    <span>{isBangla ? 'বুক নাও' : 'Book Now'}</span>
-                  </button>
+                {/* Actions & Compare Button */}
+                <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      disabled={!isAuthenticated}
+                      aria-disabled={!isAuthenticated}
+                      onClick={
+                        isAuthenticated ? () => navigate(`/book?techId=${tech.id}`) : undefined
+                      }
+                      className={`py-2.5 px-3 text-center text-xs font-bold rounded-xl transition-all inline-flex items-center justify-center gap-1.5 ${
+                        isAuthenticated
+                          ? 'bg-orange-600 hover:bg-orange-500 text-white shadow-xs cursor-pointer active:scale-98'
+                          : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed pointer-events-none select-none opacity-75'
+                      }`}
+                    >
+                      {!isAuthenticated && <Lock className="w-3 h-3 shrink-0" />}
+                      <span>{isBangla ? 'বুক নাও' : 'Book Now'}</span>
+                    </button>
 
+                    <button
+                      type="button"
+                      disabled={!isAuthenticated}
+                      aria-disabled={!isAuthenticated}
+                      onClick={
+                        isAuthenticated
+                          ? () => navigate(`/professionals/${tech.id}`)
+                          : undefined
+                      }
+                      className={`py-2.5 px-3 text-center text-xs font-semibold rounded-xl border transition-colors inline-flex items-center justify-center gap-1.5 ${
+                        isAuthenticated
+                          ? 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:text-orange-600 dark:hover:text-orange-400 cursor-pointer'
+                          : 'border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/60 text-zinc-400 dark:text-zinc-500 cursor-not-allowed pointer-events-none select-none opacity-75'
+                      }`}
+                    >
+                      {!isAuthenticated ? (
+                        <Lock className="w-3 h-3 shrink-0" />
+                      ) : (
+                        <User className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                      )}
+                      <span>{isBangla ? 'প্রোফাইল' : 'Profile'}</span>
+                    </button>
+                  </div>
+
+                  {/* Compact Compare Toggle Button */}
                   <button
                     type="button"
-                    disabled={!isAuthenticated}
-                    aria-disabled={!isAuthenticated}
-                    onClick={
-                      isAuthenticated
-                        ? () => navigate(`/professionals/${tech.id}`)
-                        : undefined
-                    }
-                    className={`py-2.5 px-3 text-center text-xs font-semibold rounded-xl border transition-colors inline-flex items-center justify-center gap-1.5 ${
-                      isAuthenticated
-                        ? 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:text-orange-600 dark:hover:text-orange-400 cursor-pointer'
-                        : 'border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/60 text-zinc-400 dark:text-zinc-500 cursor-not-allowed pointer-events-none select-none opacity-75'
+                    onClick={() => {
+                      if (isCompared) {
+                        removeFromCompare(tech.id);
+                      } else {
+                        addToCompare(tech.id);
+                      }
+                    }}
+                    className={`w-full py-2 px-3 text-center text-xs font-bold rounded-xl border transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer ${
+                      isCompared
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                        : 'border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-orange-500'
                     }`}
                   >
-                    {!isAuthenticated ? (
-                      <Lock className="w-3 h-3 shrink-0" />
-                    ) : (
-                      <User className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                    )}
-                    <span>{isBangla ? 'প্রোফাইল' : 'Profile'}</span>
+                    {isCompared ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Award className="w-3.5 h-3.5 text-orange-500" />}
+                    <span>{isCompared ? (isBangla ? 'তুলনায় যুক্ত ✓' : 'Compared ✓') : (isBangla ? 'তুলনা করো' : 'Compare')}</span>
                   </button>
                 </div>
               </div>
@@ -355,7 +427,7 @@ export const ProfessionalsPage: React.FC = () => {
             <button
               onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               disabled={safeCurrentPage === 1}
-              className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-orange-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-orange-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1 cursor-pointer"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{isBangla ? 'আগের পৃষ্ঠা' : 'Prev'}</span>
@@ -381,7 +453,7 @@ export const ProfessionalsPage: React.FC = () => {
             <button
               onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
               disabled={safeCurrentPage === totalPages}
-              className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-orange-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-orange-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1 cursor-pointer"
             >
               <span className="hidden sm:inline">{isBangla ? 'পরের পৃষ্ঠা' : 'Next'}</span>
               <ChevronRight className="w-3.5 h-3.5" />
@@ -389,6 +461,9 @@ export const ProfessionalsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Compare Modal */}
+      <CompareModal isOpen={compareModalOpen} onClose={() => setCompareModalOpen(false)} />
     </div>
   );
 };

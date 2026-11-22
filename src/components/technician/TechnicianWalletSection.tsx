@@ -28,6 +28,7 @@ import {
   deletePayoutAccountFromFirestore,
   requestWithdrawalInFirestore,
   submitCashDepositInFirestore,
+  submitManualCashDepositToAdminInFirestore,
   subscribeToCashCollections,
   subscribeToFinanceTransactions,
   subscribeToPayoutAccounts,
@@ -87,6 +88,59 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
   // Cash Deposit Reference Form per collectionId
   const [depositChannel, setDepositChannel] = useState<Record<string, string>>({});
   const [depositRef, setDepositRef] = useState<Record<string, string>>({});
+
+  // Admin Cash Deposit Submission Form State
+  const [adminDepositMethod, setAdminDepositMethod] = useState<string>('bkash_merchant');
+  const [adminDepositCustName, setAdminDepositCustName] = useState<string>('');
+  const [adminDepositCustPhone, setAdminDepositCustPhone] = useState<string>('');
+  const [adminDepositAmountVal, setAdminDepositAmountVal] = useState<number | ''>(500);
+  const [adminDepositRefVal, setAdminDepositRefVal] = useState<string>('');
+  const [submittingAdminDeposit, setSubmittingAdminDeposit] = useState<boolean>(false);
+
+  const getAdminAccountNumberForMethod = (method: string) => {
+    switch (method) {
+      case 'bkash_merchant': return '01711223344 (bKash Merchant)';
+      case 'nagad_merchant': return '01811223344 (Nagad Merchant)';
+      case 'rocket_merchant': return '01911223344 (Rocket Merchant)';
+      case 'bank_transfer': return 'BRAC Bank Acc: 1501202938492001 (Gulshan)';
+      default: return '01711223344';
+    }
+  };
+
+  const handleAdminCashDepositSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminDepositCustName.trim() || !adminDepositCustPhone.trim() || !adminDepositAmountVal || !adminDepositRefVal.trim()) {
+      setErrorMsg(isBangla ? 'অনুগ্রহ করে গ্রাহকের নাম, ফোন নম্বর, টাকার পরিমাণ এবং TrxID দিন।' : 'Please fill all cash deposit fields.');
+      return;
+    }
+    setSubmittingAdminDeposit(true);
+    setErrorMsg(null);
+    try {
+      await submitManualCashDepositToAdminInFirestore({
+        technicianId,
+        technicianName: currentUser?.name || 'Technician',
+        customerName: adminDepositCustName.trim(),
+        customerPhone: adminDepositCustPhone.trim(),
+        channel: adminDepositMethod,
+        adminAccountNumber: getAdminAccountNumberForMethod(adminDepositMethod),
+        depositReference: adminDepositRefVal.trim(),
+        amountCollected: Number(adminDepositAmountVal),
+      });
+      notify(
+        isBangla
+          ? `৳${adminDepositAmountVal} নগদ জমা অ্যাডমিন অ্যাকাউন্টে সফলভাবে পাঠানো হয়েছে! যাচাই সাপেক্ষে ৯০% ওয়ালেটে যুক্ত হবে।`
+          : `Cash deposit of ৳${adminDepositAmountVal} submitted to Admin successfully!`
+      );
+      setAdminDepositCustName('');
+      setAdminDepositCustPhone('');
+      setAdminDepositAmountVal(500);
+      setAdminDepositRefVal('');
+    } catch (err: any) {
+      setErrorMsg(err?.message || (isBangla ? 'ক্যাশ জমা পাঠাতে ব্যর্থ হয়েছে।' : 'Failed to submit cash deposit.'));
+    } finally {
+      setSubmittingAdminDeposit(false);
+    }
+  };
 
   const notify = (msg: string) => {
     setToast(msg);
@@ -737,110 +791,120 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
           </button>
         </form>
 
-        {/* Payout Accounts List */}
-        <div className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-3.5 sm:space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-black text-zinc-900 dark:text-white">
-              {isBangla ? 'সংরক্ষিত পেআউট অ্যাকাউন্টসমূহ' : 'Saved Payout Accounts'}
+        {/* Admin Cash Deposit Submission Card */}
+        <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-4">
+          <div>
+            <h4 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
+              <Banknote className="w-4 h-4 text-orange-600 shrink-0" />
+              <span>
+                {isBangla ? 'অ্যাডমিন অ্যাকাউন্টে ক্যাশ টাকা জমা দিন (সংরক্ষিত পে)' : 'Deposit Customer Cash to Admin Account'}
+              </span>
             </h4>
-            <button
-              type="button"
-              onClick={() => setShowAddAccount(!showAddAccount)}
-              className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-zinc-800 font-bold flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{isBangla ? 'অ্যাকাউন্ট যোগ করুন' : 'Add Account'}</span>
-            </button>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {isBangla
+                ? 'গ্রাহকের নিকট থেকে সংগৃহীত ক্যাশ টাকা অ্যাডমিনের মার্চেন্ট বা ব্যাংক অ্যাকাউন্টে পাঠিয়ে নিচে তথ্য দিন। অ্যাডমিন যাচাই করার পর ৯০% আপনার ওয়ালেটে জমা হবে।'
+                : 'Send collected customer cash to Admin merchant account and submit reference here for 90% wallet credit.'}
+            </p>
           </div>
 
-          {showAddAccount && (
-            <form onSubmit={handleAddPayoutAccount} className="p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800 space-y-2.5">
+          <form onSubmit={handleAdminCashDepositSubmit} className="space-y-3.5 text-xs">
+            <div>
+              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                {isBangla ? 'পেমেন্ট মেথড নির্বাচন করুন:' : 'Select Payment Method:'}
+              </label>
               <select
-                value={newAcct.provider}
-                onChange={(e) => setNewAcct({ ...newAcct, provider: e.target.value as PayoutProvider })}
-                className="w-full p-2 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 font-bold uppercase"
+                value={adminDepositMethod}
+                onChange={(e) => setAdminDepositMethod(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-bold uppercase cursor-pointer"
               >
-                <option value="bkash">{isBangla ? 'বিকাশ (bKash)' : 'bKash'}</option>
-                <option value="nagad">{isBangla ? 'নগদ (Nagad)' : 'Nagad'}</option>
-                <option value="rocket">{isBangla ? 'রকেট (Rocket)' : 'Rocket'}</option>
-                <option value="bank">{isBangla ? 'ব্যাংক ট্রান্সফার (Bank Transfer)' : 'Bank Transfer'}</option>
+                <option value="bkash_merchant">{isBangla ? 'বিকাশ মার্চেন্ট (bKash Merchant)' : 'bKash Merchant'}</option>
+                <option value="nagad_merchant">{isBangla ? 'নগদ মার্চেন্ট (Nagad Merchant)' : 'Nagad Merchant'}</option>
+                <option value="rocket_merchant">{isBangla ? 'রকেট মার্চেন্ট (Rocket Merchant)' : 'Rocket Merchant'}</option>
+                <option value="bank_transfer">{isBangla ? 'ব্যাংক অ্যাকাউন্ট (Bank Transfer)' : 'Bank Transfer'}</option>
               </select>
-              <input
-                type="text"
-                required
-                placeholder={isBangla ? 'অ্যাকাউন্টধারীর নাম' : 'Account Holder Title'}
-                value={newAcct.accountTitle}
-                onChange={(e) => setNewAcct({ ...newAcct, accountTitle: e.target.value })}
-                className="w-full p-2 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
-              />
-              <input
-                type="text"
-                required
-                placeholder={isBangla ? 'অ্যাকাউন্ট / মোবাইল নম্বর' : 'Account / Mobile Number'}
-                value={newAcct.accountNumber}
-                onChange={(e) => setNewAcct({ ...newAcct, accountNumber: e.target.value })}
-                className="w-full p-2 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 font-mono"
-              />
-              {newAcct.provider === 'bank' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder={isBangla ? 'ব্যাংকের নাম' : 'Bank Name'}
-                    value={newAcct.bankName}
-                    onChange={(e) => setNewAcct({ ...newAcct, bankName: e.target.value })}
-                    className="p-2 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
-                  />
-                  <input
-                    type="text"
-                    required
-                    placeholder={isBangla ? 'শাখার নাম (Branch)' : 'Branch Name'}
-                    value={newAcct.branchName}
-                    onChange={(e) => setNewAcct({ ...newAcct, branchName: e.target.value })}
-                    className="p-2 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
-                  />
-                </div>
-              )}
-              <button type="submit" className="w-full py-2 rounded-xl bg-emerald-600 text-white font-black cursor-pointer">
-                {isBangla ? 'অ্যাডমিন যাচাইয়ের জন্য জমা দিন' : 'Submit for Admin Verification'}
-              </button>
-            </form>
-          )}
+            </div>
 
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {payoutAccounts.map((pa) => (
-              <div key={pa.id} className="py-2.5 flex items-center justify-between gap-2">
-                <div>
-                  <div className="font-bold uppercase text-zinc-900 dark:text-white">
-                    {pa.provider} · {pa.accountNumber}
-                  </div>
-                  <div className="text-[11px] text-zinc-400">{pa.accountTitle}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
-                      pa.verificationStatus === 'VERIFIED'
-                        ? 'bg-emerald-500/15 text-emerald-600'
-                        : pa.verificationStatus === 'REJECTED'
-                        ? 'bg-rose-500/15 text-rose-600'
-                        : 'bg-amber-500/15 text-amber-600'
-                    }`}
-                  >
-                    {formatVerificationStatus(pa.verificationStatus)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void handleDeletePayoutAccount(pa)}
-                    title={isBangla ? 'অ্যাকাউন্ট মুছুন' : 'Delete Account'}
-                    aria-label={isBangla ? 'অ্যাকাউন্ট মুছুন' : 'Delete Account'}
-                    className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+            <div>
+              <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                {isBangla ? 'অ্যাডমিন অ্যাকাউন্ট / মার্চেন্ট নম্বর (অটো-ফিল):' : 'Admin Account / Merchant Number (Auto-filled):'}
+              </label>
+              <input
+                type="text"
+                readOnly
+                value={getAdminAccountNumberForMethod(adminDepositMethod)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-100 dark:bg-zinc-800 font-mono font-black text-orange-600"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'গ্রাহকের নাম:' : 'Customer Name:'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminDepositCustName}
+                  onChange={(e) => setAdminDepositCustName(e.target.value)}
+                  placeholder={isBangla ? 'যেমন: মোহাম্মদ রহিম' : 'e.g. John Doe'}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-semibold"
+                />
               </div>
-            ))}
-          </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'গ্রাহকের ফোন নম্বর:' : 'Customer Phone Number:'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminDepositCustPhone}
+                  onChange={(e) => setAdminDepositCustPhone(e.target.value)}
+                  placeholder="017XXXXXXXX"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-mono font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'কত টাকা ক্যাশ দিয়েছে (৳):' : 'Cash Amount Collected (৳):'}
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={50}
+                  value={adminDepositAmountVal}
+                  onChange={(e) => setAdminDepositAmountVal(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="500"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-black tabular-nums"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isBangla ? 'লেনদেন TrxID / রেফারেন্স:' : 'Transaction TrxID / Ref:'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminDepositRefVal}
+                  onChange={(e) => setAdminDepositRefVal(e.target.value)}
+                  placeholder="BKTX9938201"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-mono font-bold"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={submittingAdminDeposit}
+              className="w-full py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black cursor-pointer shadow-md transition-all disabled:opacity-60 flex items-center justify-center gap-1.5"
+            >
+              <span>{isBangla ? 'অ্যাডমিন অ্যাকাউন্টে ক্যাশ টাকা জমা পাঠান' : 'Submit Cash Deposit to Admin Account'}</span>
+            </button>
+          </form>
         </div>
       </div>
 

@@ -1262,3 +1262,72 @@ export async function saveAuditLogToFirestore(log: AdminAuditLog): Promise<void>
     handleFirestoreError(error, OperationType.WRITE, `auditLogs/${log.id}`);
   }
 }
+
+export async function submitManualCashDepositToAdminInFirestore(params: {
+  technicianId: string;
+  technicianName: string;
+  customerName: string;
+  customerPhone: string;
+  channel: string;
+  adminAccountNumber: string;
+  depositReference: string;
+  amountCollected: number;
+}): Promise<CashCollectionRecord> {
+  const { technicianId, technicianName, customerName, customerPhone, channel, adminAccountNumber, depositReference, amountCollected } = params;
+  const now = new Date();
+  const collectionId = `cc-manual-${Date.now()}`;
+  const bookingId = `book-manual-${Date.now()}`;
+  const bookingNumber = `MANUAL-${Math.floor(1000 + Math.random() * 9000)}`;
+  const amount = Math.round((Number(amountCollected) || 0) * 100) / 100;
+  const comm = Math.round(amount * 0.1 * 100) / 100;
+  const techShare = Math.round((amount - comm) * 100) / 100;
+
+  const record: CashCollectionRecord = {
+    id: collectionId,
+    bookingId,
+    bookingNumber,
+    technicianId,
+    technicianName,
+    customerId: 'cust-walkin',
+    amountCollected: amount,
+    commissionAmount: comm,
+    technicianShareAmount: techShare,
+    status: 'VERIFICATION_PENDING',
+    collectedAt: now.toISOString(),
+    deadlineAt: new Date(now.getTime() + 48 * 3600_000).toISOString(),
+    graceEndsAt: new Date(now.getTime() + 60 * 3600_000).toISOString(),
+    reminderCount: 0,
+    bookingRestrictedApplied: false,
+    deposit: {
+      id: `dep-${Date.now()}`,
+      cashCollectionId: collectionId,
+      bookingId,
+      technicianId,
+      channel,
+      depositReference,
+      amountDeposited: amount,
+      merchantAccountInfo: adminAccountNumber,
+      status: 'VERIFICATION_PENDING',
+      submittedAt: now.toISOString(),
+    },
+  };
+
+  await setDoc(doc(db, 'cashCollections', record.id), stripUndefined(record));
+
+  await saveNotificationToFirestore({
+    id: `notif-manual-cash-admin-${Date.now()}`,
+    userId: 'ADMIN_BROADCAST',
+    role: 'ADMIN',
+    titleEn: `Technician Cash Deposit to Admin (৳${amount})`,
+    titleBn: `💵 টেকনিশিয়ান অ্যাডমিন অ্যাকাউন্টে নগদ জমা পাঠিয়েছেন (৳${amount})`,
+    messageEn: `${technicianName} deposited ৳${amount} cash from customer ${customerName} (${customerPhone}) to Admin ${channel} (${adminAccountNumber}). Ref: ${depositReference}.`,
+    messageBn: `${technicianName} গ্রাহক ${customerName} (${customerPhone})-এর থেকে সংগৃহীত ৳${amount} ক্যাশ অ্যাডমিন ${channel} (${adminAccountNumber}) নম্বরে পাঠিয়ে দিয়েছেন। TrxID: ${depositReference}। যাচাই করুন।`,
+    type: 'payment',
+    link: '/admin/dashboard?tab=cash',
+    isRead: false,
+    createdAt: now.toISOString(),
+  });
+
+  return record;
+}
+

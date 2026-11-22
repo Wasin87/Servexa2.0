@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   ArrowLeft,
   Heart,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -140,6 +142,19 @@ export const ProfessionalDetailPage: React.FC = () => {
                 </span>
               </div>
 
+              {/* Technician Contact Details: Email & Phone */}
+              <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-zinc-600 dark:text-zinc-300 pt-0.5">
+                <div className="flex items-center gap-1.5 font-mono">
+                  <Mail className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                  <span>{technician.email || 'support@servexa.com'}</span>
+                </div>
+                <span>·</span>
+                <div className="flex items-center gap-1.5 font-mono font-bold text-zinc-800 dark:text-zinc-200">
+                  <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>{technician.phone || '+8801700000000'}</span>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
                 <span>
@@ -185,10 +200,19 @@ export const ProfessionalDetailPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <Link
                 to={`/book?techId=${technician.id}`}
-                className="flex-1 lg:flex-initial px-6 py-3 text-center text-xs font-bold rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-md transition-all hover:scale-102"
+                className="flex-1 lg:flex-initial px-5 py-3 text-center text-xs font-bold rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-md transition-all hover:scale-102"
               >
                 {t.actions.bookNow}
               </Link>
+              {/* Call CTA Button */}
+              <a
+                href={`tel:${(technician.phone || '+8801700000000').replace(/\s+/g, '')}`}
+                className="px-4 py-3 text-center text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all inline-flex items-center gap-1.5 shrink-0"
+                title={isBangla ? 'সরাসরি কল করুন' : 'Direct Call'}
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span>{isBangla ? 'কল করুন' : 'Call'}</span>
+              </a>
               <button
                 type="button"
                 onClick={() => (isAuthenticated ? setChatOpen(true) : navigate('/login'))}

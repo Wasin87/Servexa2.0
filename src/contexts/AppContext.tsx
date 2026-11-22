@@ -877,7 +877,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addToCompare = (technicianId: string) => {
     if (comparedTechIds.includes(technicianId)) return true;
-    if (comparedTechIds.length >= 3) return false;
+    if (comparedTechIds.length >= 5) return false;
     setComparedTechIds((prev) => [...prev, technicianId]);
     return true;
   };

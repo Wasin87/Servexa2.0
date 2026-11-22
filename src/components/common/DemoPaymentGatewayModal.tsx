@@ -255,12 +255,25 @@ export const DemoPaymentGatewayModal: React.FC<DemoPaymentGatewayModalProps> = (
                 </div>
               )}
 
+              {/* Auto-filled Admin Platform Merchant / Escrow Account */}
+              <div className="p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900/50 space-y-1">
+                <div className="text-[10px] font-bold text-orange-800 dark:text-orange-300 uppercase">
+                  {isBangla ? 'Servexa প্ল্যাটফর্ম অ্যাডমিন মার্চেন্ট অ্যাকাউন্ট (অটো-ফিল):' : 'Servexa Admin Platform Account (Auto-filled):'}
+                </div>
+                <div className="font-mono font-black text-zinc-900 dark:text-white text-xs">
+                  {method === 'bkash' && 'bKash Merchant: 01711223344'}
+                  {method === 'nagad' && 'Nagad Merchant: 01811223344'}
+                  {method === 'rocket' && 'Rocket Merchant: 01911223344'}
+                  {method === 'card' && 'BRAC Bank Escrow: 1501202938492001 (Gulshan Branch)'}
+                </div>
+              </div>
+
               <div>
                 <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
                   {method === 'card'
                     ? isBangla
-                      ? 'ব্যাংক অ্যাকাউন্ট / কার্ড নম্বর'
-                      : 'Bank Account / Card Number'
+                      ? 'আপনার ব্যাংক অ্যাকাউন্ট / কার্ড নম্বর'
+                      : 'Your Bank Account / Card Number'
                     : isBangla
                       ? `আপনার ${method.toUpperCase()} অ্যাকাউন্ট নম্বর`
                       : `Your ${method.toUpperCase()} Account Number`}
