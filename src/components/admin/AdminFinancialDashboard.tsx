@@ -770,48 +770,41 @@ export const AdminFinancialDashboard: React.FC = () => {
       <div className="flex flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-bold">
         {(
           [
-            ['overview', isBangla ? 'আর্থিক ওভারভিউ ও চার্ট' : 'Overview & Metrics'],
-            [
-              'escrow',
-              isBangla
-                ? `অনলাইন পেমেন্ট ও এসক্রো (${pendingEscrowTxs.length} অপেক্ষমাণ)`
-                : `Online Escrow (${pendingEscrowTxs.length} Pending)`,
-            ],
-            [
-              'withdrawals',
-              isBangla
-                ? `উত্তোলন (${openWithdrawalsCount}) ও কেওয়াইসি`
-                : `Withdrawals (${openWithdrawalsCount}) & KYC`,
-            ],
-            [
-              'cash',
-              isBangla ? `কাজ শেষে নগদ (${openCashCount})` : `Cash Collection (${openCashCount})`,
-            ],
-            [
-              'wallets',
-              isBangla
-                ? `টেকনিশিয়ান ওয়ালেট (${techWallets.length})`
-                : `Tech Wallets (${techWallets.length})`,
-            ],
-            [
-              'ledger',
-              isBangla ? `লেনদেন ও রিফান্ড (${transactions.length})` : `Ledger (${transactions.length})`,
-            ],
+            ['overview', isBangla ? 'আর্থিক ওভারভিউ' : 'Overview'],
+            ['escrow', isBangla ? 'অনলাইন পেমেন্ট এসক্রো' : 'Online Escrow', pendingEscrowTxs.length],
+            ['withdrawals', isBangla ? 'উত্তোলন ও কেওয়াইসি' : 'Withdrawals & KYC', openWithdrawalsCount],
+            ['cash', isBangla ? 'নগদ কালেকশন' : 'Cash Collection', openCashCount],
+            ['wallets', isBangla ? 'টেকনিশিয়ান ওয়ালেট' : 'Tech Wallets', techWallets.length],
+            ['ledger', isBangla ? 'লেনদেন লেজার' : 'Ledger', transactions.length],
           ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setSubTab(k)}
-            className={`px-3 py-1.5 sm:py-2 rounded-xl cursor-pointer transition-colors whitespace-nowrap ${
-              subTab === k
-                ? 'bg-orange-600 text-white'
-                : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+        ).map(([k, label, count]) => {
+          const hasPending = (k === 'escrow' && pendingEscrowTxs.length > 0) ||
+                             (k === 'withdrawals' && openWithdrawalsCount > 0) ||
+                             (k === 'cash' && openCashCount > 0);
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setSubTab(k)}
+              className={`px-3 py-1.5 sm:py-2 rounded-xl cursor-pointer transition-colors whitespace-nowrap flex items-center gap-1.5 font-bold ${
+                subTab === k
+                  ? 'bg-orange-600 text-white shadow-md'
+                  : hasPending
+                  ? 'bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25'
+                  : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
+              }`}
+            >
+              <span>{label}</span>
+              {count !== undefined && count > 0 && (
+                <span className={`px-1.5 py-0.2 text-[10px] font-black rounded-full ${
+                  subTab === k ? 'bg-white text-orange-600' : 'bg-orange-600 text-white animate-pulse'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* SUB-TAB 1: OVERVIEW & 90/10 METRICS */}

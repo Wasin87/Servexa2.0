@@ -190,7 +190,7 @@ export const BookPage: React.FC = () => {
   const customerCompletion = calculateCustomerCompletion(currentUser);
   const isProfileIncomplete =
     isAuthenticated && currentUser?.role === 'CUSTOMER' && !customerCompletion.isComplete;
-  const canBook = isAuthenticated && !!currentUser && !isProfileIncomplete;
+  const canBook = isAuthenticated && !!currentUser && !isProfileIncomplete && currentUser.role !== 'TECHNICIAN';
 
   // Fallback pricing calculation (synced with serverQuote when available)
   const visitingFee = serverQuote?.visitingFee ?? (
@@ -510,8 +510,8 @@ export const BookPage: React.FC = () => {
             </h2>
             <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
               {isBangla
-                ? 'টেকনিশিয়ান অ্যাকাউন্ট থেকে অন্য টেকনিশিয়ান বুক করা যায় না। সেবা বুক করতে অনুগ্রহ করে কাস্টমার অ্যাকাউন্ট ব্যবহার করুন।'
-                : 'Technicians cannot book other technicians. Please use a customer account to request services.'}
+                ? 'টেকনিশিয়ান অ্যাকাউন্ট থেকে সরাসরি এই টেকনিশিয়ান বুক করা যায় না। এই টেকনিশিয়ানকে বুক করতে অনুগ্রহ করে কাস্টমার মোডে স্যুইচ করুন।'
+                : 'Please switch to Customer Mode to book this technician.'}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
