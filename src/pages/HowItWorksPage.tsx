@@ -29,46 +29,7 @@ export const HowItWorksPage: React.FC = () => {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   const customerSteps = [
-    {
-      num: '01',
-      titleEn: 'Describe Your Issue or Choose Category',
-      titleBn: 'সমস্যা লিখুন অথবা সার্ভিস নির্বাচন করুন',
-      descEn: 'Type your repair problem in simple everyday Bengali or English, or browse our 21+ certified home maintenance trades.',
-      descBn: 'সহজ বাংলা বা ইংরেজিতে আপনার সমস্যাটি লিখুন অথবা আমাদের ২১+ গৃহস্থালি ও কারিগরি সার্ভিস তালিকা থেকে বেছে নিন।',
-      icon: Search,
-      highlightEn: 'Instant AI Smart Suggestion',
-      highlightBn: 'তাৎক্ষণিক এআই সমস্যা বিশ্লেষণ'
-    },
-    {
-      num: '02',
-      titleEn: 'Select & Compare Verified Specialists',
-      titleBn: 'যাচাইকৃত মিস্ত্রি তুলনা ও পছন্দ করুন',
-      descEn: 'Inspect NID-checked badges, authentic client star ratings, transparent visiting rates, and live health metrics.',
-      descBn: 'জাতীয় পরিচয়পত্র যাচাইকৃত ব্যাজ, বাস্তব গ্রাহকদের ৫-স্টার রেটিং, কাজের পূর্ব অভিজ্ঞতা ও স্বচ্ছ ভিজিটিং ফি দেখে মিস্ত্রি বেছে নিন।',
-      icon: Users,
-      highlightEn: '100% Background Checked',
-      highlightBn: '১০০% আইডি ও স্কিল ভেরিফাইড'
-    },
-    {
-      num: '03',
-      titleEn: 'Doorstep Service at Your Preferred Slot',
-      titleBn: 'আপনার সুবিধাজনক সময়ে দোরগোড়ায় সেবা',
-      descEn: 'The professional arrives on time with modern diagnostic tools and safety equipment. Track status live in-app.',
-      descBn: 'নির্ধারিত সময়ে মিস্ত্রি প্রয়োজনীয় যন্ত্রপাতি ও সেফটি গিয়ার নিয়ে আপনার ঠিকানায় পৌঁছাবেন। লাইভ স্ট্যাটাস অ্যাপে ট্র্যাক করুন।',
-      icon: CheckCircle,
-      highlightEn: 'Real-Time Status Updates',
-      highlightBn: 'লাইভ স্ট্যাটাস ট্র্যাকিং'
-    },
-    {
-      num: '04',
-      titleEn: 'Digital Invoice & 7-30 Days Free Warranty',
-      titleBn: 'ডিজিটাল ইনভয়েস ও ফ্রি ওয়ারেন্টি গ্যারান্টি',
-      descEn: 'Pay securely after full satisfaction via Cash or bKash. Enjoy up to 30 days of hassle-free service warranty.',
-      descBn: 'কাজ সম্পূর্ণ ও সন্তুষ্টির পর ক্যাশ বা বিকাশে বিল পরিশোধ করুন। প্রতিটি কাজের সাথে পাচ্ছেন ৭ থেকে ৩০ দিনের ফ্রি ওয়ারেন্টি।',
-      icon: Receipt,
-      highlightEn: '100% Money Safety Escrow',
-      highlightBn: 'স্বচ্ছ মূল্য ও ওয়ারেন্টি গ্যারান্টি'
-    }
+   
   ];
 
   const technicianSteps = [
