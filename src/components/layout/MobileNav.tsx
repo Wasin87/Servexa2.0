@@ -97,28 +97,7 @@ export const MobileNav: React.FC = () => {
   ];
 
   const getAdminItems = (): MobileNavItem[] => [
-    {
-      to: '/admin/dashboard?tab=overview',
-      label: isBangla ? 'কেওয়াইসি' : 'KYC',
-      icon: ShieldCheck,
-      end: true,
-    },
-    {
-      to: '/admin/dashboard?tab=bookings',
-      label: isBangla ? 'বুকিং' : 'Bookings',
-      icon: Calendar,
-    },
-    {
-      to: '/admin/dashboard?tab=finance',
-      label: isBangla ? 'ফাইন্যান্স' : 'Finance',
-      icon: DollarSign,
-    },
-    {
-      to: '/admin/dashboard?tab=disputes',
-      label: isBangla ? 'অভিযোগ' : 'Disputes',
-      icon: AlertTriangle,
-    },
-    { to: '/heatmap', label: isBangla ? 'হিটম্যাপ' : 'Heatmap', icon: Flame },
+   
   ];
 
   const navItems =
