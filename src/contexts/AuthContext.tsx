@@ -49,6 +49,7 @@ interface AuthContextType {
   register: (userData: RegisterInput) => Promise<AuthActionResult>;
   logout: () => void;
   updateProfile: (updatedData: Partial<User>) => Promise<boolean>;
+  switchRole: (role: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -580,6 +581,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const switchRole = async (targetRole: UserRole) => {
+    const baseUser = currentUserRef.current || currentUser;
+    if (!baseUser) return;
+    const nextUser: User = { ...baseUser, role: targetRole };
+    currentUserRef.current = nextUser;
+    safeCacheActiveUser(nextUser);
+    cacheRegisteredUser(nextUser);
+    setCurrentUser(nextUser);
+    await saveUserToFirestore(nextUser);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -594,6 +606,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         updateProfile,
+        switchRole,
       }}
     >
       {children}

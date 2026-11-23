@@ -82,6 +82,8 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
 
   // Withdrawal Request Form
   const [selectedAcctId, setSelectedAcctId] = useState('');
+  const [withdrawMethod, setWithdrawMethod] = useState<PayoutProvider>('bkash');
+  const [withdrawAccountNumber, setWithdrawAccountNumber] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState<number>(100);
   const [withdrawing, setWithdrawing] = useState(false);
 
@@ -361,12 +363,35 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
 
   const handleRequestWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
-    const chosenAcct = payoutAccounts.find((a) => a.id === selectedAcctId) || payoutAccounts[0];
+    let chosenAcct = payoutAccounts.find((a) => a.id === selectedAcctId);
+    if (!chosenAcct && withdrawAccountNumber.trim()) {
+      try {
+        chosenAcct = await addPayoutAccountToFirestore({
+          technicianId,
+          technicianName: currentUser?.name || 'Technician',
+          provider: withdrawMethod,
+          accountTitle: currentUser?.name || 'Technician',
+          accountNumber: withdrawAccountNumber.trim(),
+          bankName: withdrawMethod === 'bank' ? 'Commercial Bank' : '',
+          branchName: '',
+        });
+      } catch {
+        // fallback
+      }
+    }
+    if (!chosenAcct && !withdrawAccountNumber.trim()) {
+      setErrorMsg(
+        isBangla
+          ? 'অনুগ্রহ করে উত্তোলনের মেথড এবং অ্যাকাউন্ট/ফোন নম্বর দিন।'
+          : 'Please provide payout method and account number.'
+      );
+      return;
+    }
     if (!chosenAcct) {
       setErrorMsg(
         isBangla
-          ? 'উত্তোলনের আগে অনুগ্রহ করে নিচে থেকে অন্তত একটি পেআউট অ্যাকাউন্ট (bKash/Nagad/Bank) যোগ করুন।'
-          : 'Please add at least one payout account first.'
+          ? 'অনুগ্রহ করে সঠিক পেআউট অ্যাকাউন্ট প্রদান করুন।'
+          : 'Please provide a valid payout account.'
       );
       return;
     }
@@ -390,13 +415,14 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
       }
       notify(
         isBangla
-          ? `৳${withdrawAmount} উত্তোলনের আবেদন রিয়েল-টাইমে অ্যাডমিনের কাছে পাঠানো হয়েছে!`
-          : `Withdrawal request of ৳${withdrawAmount} submitted live to Admin!`
+          ? `৳${withdrawAmount} উত্তোলনের আবেদন (${chosenAcct.provider.toUpperCase()} - ${chosenAcct.accountNumber}) রিয়েল-টাইমে পাঠানো হয়েছে!`
+          : `Withdrawal request of ৳${withdrawAmount} submitted live!`
       );
+      setWithdrawAccountNumber('');
     } catch (err: any) {
       setErrorMsg(
         err?.message ||
-          (isBangla ? 'ব্যালেন্স বা সীমা যাচাইয়ের কারণে উত্তোলনের আবেদন ব্যর্থ হয়েছে।' : 'Withdrawal rejected by balance/limit check.')
+          (isBangla ? 'ব্যালেন্স বা সীমা যাচাইয়ের কারণে উত্তোলনের আবেদন ব্যর্থ হয়েছে।' : 'Withdrawal rejected.')
       );
     } finally {
       setWithdrawing(false);
@@ -743,18 +769,46 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
             <ArrowUpRight className="w-4 h-4 text-orange-600" />
             <span>{isBangla ? 'অর্থ উত্তোলনের আবেদন (রিজার্ভ সুরক্ষিত)' : 'Request Withdrawal (Reserve Protected)'}</span>
           </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-zinc-600 dark:text-zinc-400 block mb-1">
+                {isBangla ? 'উত্তোলনের মেথড:' : 'Payout Method:'}
+              </label>
+              <select
+                value={withdrawMethod}
+                onChange={(e) => setWithdrawMethod(e.target.value as PayoutProvider)}
+                className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-stone-50 dark:bg-zinc-800 font-bold uppercase"
+              >
+                <option value="bkash">{isBangla ? 'বিকাশ (bKash)' : 'bKash'}</option>
+                <option value="nagad">{isBangla ? 'নগদ (Nagad)' : 'Nagad'}</option>
+                <option value="rocket">{isBangla ? 'রকেট (Rocket)' : 'Rocket'}</option>
+                <option value="bank">{isBangla ? 'ব্যাংক (Bank Account)' : 'Bank Transfer'}</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-bold text-zinc-600 dark:text-zinc-400 block mb-1">
+                {isBangla ? 'অ্যাকাউন্ট / ফোন নম্বর:' : 'Account / Phone No:'}
+              </label>
+              <input
+                type="text"
+                placeholder="017XXXXXXXX"
+                value={withdrawAccountNumber}
+                onChange={(e) => setWithdrawAccountNumber(e.target.value)}
+                className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-stone-50 dark:bg-zinc-800 font-mono font-bold"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="font-bold text-zinc-600 dark:text-zinc-400 block mb-1">
-              {isBangla ? 'পেআউট অ্যাকাউন্ট:' : 'Payout Account:'}
+              {isBangla ? 'সংরক্ষিত পেআউট অ্যাকাউন্ট (ঐচ্ছিক):' : 'Saved Payout Account (Optional):'}
             </label>
             <select
               value={selectedAcctId}
               onChange={(e) => setSelectedAcctId(e.target.value)}
               className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-stone-50 dark:bg-zinc-800 font-bold"
             >
-              {payoutAccounts.length === 0 && (
-                <option value="">{isBangla ? 'কোনো পেআউট অ্যাকাউন্ট যুক্ত নেই' : 'No payout accounts added'}</option>
-              )}
+              <option value="">{isBangla ? '-- নতুন নম্বর ব্যবহার করুন --' : '-- Use New Number Above --'}</option>
               {payoutAccounts.map((pa) => (
                 <option key={pa.id} value={pa.id}>
                   {pa.provider.toUpperCase()} · {pa.accountNumber} ({formatVerificationStatus(pa.verificationStatus)})

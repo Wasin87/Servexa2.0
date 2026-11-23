@@ -22,7 +22,7 @@ import { useApp } from '../../contexts/AppContext';
 
 export const Navbar: React.FC = () => {
   const { t, isBangla } = useLanguage();
-  const { currentUser, role, logout } = useAuth();
+  const { currentUser, role, logout, switchRole } = useAuth();
   const {
     notifications,
     technicians,
@@ -463,6 +463,26 @@ export const Navbar: React.FC = () => {
                         </span>
                       </div>
                     </div>
+
+                    {role !== 'ADMIN' && (
+                      <button
+                        onClick={() => {
+                          const nextRole = role === 'TECHNICIAN' ? 'CUSTOMER' : 'TECHNICIAN';
+                          void switchRole(nextRole);
+                          setUserMenuOpen(false);
+                          navigate(nextRole === 'TECHNICIAN' ? '/technician/dashboard' : '/customer/dashboard');
+                        }}
+                        type="button"
+                        className="w-full text-left flex items-center gap-2.5 px-4 py-2.5 hover:bg-orange-50 dark:hover:bg-orange-950/30 text-xs font-bold text-orange-600 dark:text-orange-400 transition-colors border-b border-zinc-100 dark:border-zinc-800 cursor-pointer"
+                      >
+                        <span>🔄</span>
+                        <span>
+                          {role === 'TECHNICIAN'
+                            ? (isBangla ? '👤 গ্রাহক মোডে স্যুইচ করুন' : 'Switch to Customer Mode')
+                            : (isBangla ? '👷 টেকনিশিয়ান মোডে স্যুইচ করুন' : 'Switch to Technician Mode')}
+                        </span>
+                      </button>
+                    )}
 
                     <Link
                       to={getDashboardLink()}

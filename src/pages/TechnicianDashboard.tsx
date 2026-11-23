@@ -2774,10 +2774,10 @@ export const TechnicianDashboard: React.FC = () => {
                 <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
                   {isBangla ? 'পেমেন্ট মেথড:' : 'Payment Method:'}
                 </label>
-                <select value={paymentMethodInput} onChange={(e) => setPaymentMethodInput(e.target.value as any)} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold">
-                  <option value="cash">{isBangla ? 'নগদ ক্যাশ (Cash)' : 'Cash on Completion'}</option>
-                  <option value="bkash">{isBangla ? 'বিকাশ (bKash)' : 'bKash'}</option>
-                  <option value="nagad">{isBangla ? 'নগদ (Nagad)' : 'Nagad'}</option>
+                <select value={paymentMethodInput} onChange={(e) => setPaymentMethodInput(e.target.value as any)} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold">
+                  <option value="cash" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'নগদ ক্যাশ (Cash)' : 'Cash on Completion'}</option>
+                  <option value="bkash" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'বিকাশ (bKash)' : 'bKash'}</option>
+                  <option value="nagad" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'নগদ (Nagad)' : 'Nagad'}</option>
                 </select>
               </div>
 

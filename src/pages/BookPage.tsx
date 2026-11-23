@@ -41,7 +41,7 @@ import type { PaymentMethodCode, PriceQuoteResponse, ServiceSubcategory } from '
 export const BookPage: React.FC = () => {
   const { categories, technicians, createBooking } = useApp();
   const { t, isBangla } = useLanguage();
-  const { currentUser, isAuthenticated } = useAuth();
+  const { currentUser, isAuthenticated, switchRole } = useAuth();
   const { showToast, triggerConfettiBurst } = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -498,8 +498,39 @@ export const BookPage: React.FC = () => {
         </p>
       </div>
 
-      {/* GATE 1: Login / Signup Required */}
-      {!isAuthenticated || !currentUser ? (
+      {/* Technician Booking Restriction Check */}
+      {currentUser && currentUser.role === 'TECHNICIAN' ? (
+        <div className="mb-8 p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border-2 border-orange-500/40 shadow-xl text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center mx-auto text-orange-600">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5 max-w-md mx-auto">
+            <h2 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white">
+              {isBangla ? 'টেকনিশিয়ান হিসেবে বুকিং সীমাবদ্ধ' : 'Booking Restricted for Technicians'}
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              {isBangla
+                ? 'টেকনিশিয়ান অ্যাকাউন্ট থেকে অন্য টেকনিশিয়ান বুক করা যায় না। সেবা বুক করতে অনুগ্রহ করে কাস্টমার অ্যাকাউন্ট ব্যবহার করুন।'
+                : 'Technicians cannot book other technicians. Please use a customer account to request services.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => void switchRole('CUSTOMER')}
+              className="px-6 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs sm:text-sm shadow-md flex items-center gap-2 cursor-pointer"
+            >
+              <span>{isBangla ? 'গ্রাহক মোডে স্যুইচ করুন' : 'Switch to Customer Mode'}</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+            <Link
+              to="/technician/dashboard"
+              className="px-6 py-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-bold text-xs sm:text-sm hover:border-orange-500"
+            >
+              {isBangla ? 'টেকনিশিয়ান ড্যাশবোর্ডে ফিরে যান' : 'Return to Tech Dashboard'}
+            </Link>
+          </div>
+        </div>
+      ) : (!isAuthenticated || !currentUser ? (
         <div className="mb-8 p-6 sm:p-8 rounded-3xl bg-white dark:bg-zinc-900 border-2 border-orange-500/40 shadow-xl text-center space-y-4">
           <div className="w-14 h-14 rounded-2xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center mx-auto text-orange-600">
             <Lock className="w-7 h-7" />
@@ -530,7 +561,7 @@ export const BookPage: React.FC = () => {
             </Link>
           </div>
         </div>
-      ) : null}
+      ) : null)}
 
       {/* GATE 2: Customer Profile 100% Completion Requirement */}
       {isProfileIncomplete && (
