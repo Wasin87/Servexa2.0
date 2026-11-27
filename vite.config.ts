@@ -3,7 +3,10 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { defineConfig } from 'vite';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(() => {
   return {
@@ -12,6 +15,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: false,
         includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
           id: '/',
@@ -51,16 +55,34 @@ export default defineConfig(() => {
           skipWaiting: true,
           clientsClaim: true,
           navigateFallback: null,
-          globPatterns: ['**/*.{js,css,ico,png,jpg,jpeg,webp,svg,woff,woff2}'],
+          globPatterns: ['**/*.{js,css,ico,svg,woff,woff2}', 'pwa-*.png', 'apple-touch-icon.png'],
+          globIgnores: ['src/assets/**', 'assets/aistudio/**'],
           runtimeCaching: [
             {
               urlPattern: ({ request }) => request.mode === 'navigate',
               handler: 'NetworkFirst',
               options: {
-                cacheName: 'html-navigation-cache',
-                networkTimeoutSeconds: 3,
+                cacheName: 'servexa-html-nav-v2',
+                networkTimeoutSeconds: 8,
+                fetchOptions: {
+                  cache: 'no-store',
+                },
                 cacheableResponse: {
                   statuses: [200],
+                },
+              },
+            },
+            {
+              urlPattern: ({ request }) => request.destination === 'image',
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'servexa-images-v1',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
                 },
               },
             },
@@ -115,6 +137,9 @@ export default defineConfig(() => {
         },
       },
     ],
+    build: {
+      chunkSizeWarningLimit: 3500,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
