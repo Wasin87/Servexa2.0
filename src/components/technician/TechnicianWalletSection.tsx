@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useToast } from '../../contexts/ToastContext';
 import {
   addPayoutAccount,
   fetchWalletDashboard,
@@ -52,6 +53,7 @@ interface Props {
 export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
   const { authTokenReady, currentUser } = useAuth();
   const { isBangla } = useLanguage();
+  const { showToast: showGlobalToast, triggerConfettiBurst } = useToast();
   const [serverWallet, setServerWallet] = useState<WalletSummary | null>(null);
   const [policy, setPolicy] = useState<any>(null);
   const [serverLedger, setServerLedger] = useState<WalletLedgerEntry[]>([]);
@@ -363,15 +365,21 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
 
   const handleRequestWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
-    let chosenAcct = payoutAccounts.find((a) => a.id === selectedAcctId);
-    if (!chosenAcct && withdrawAccountNumber.trim()) {
+    const typedAccount = withdrawAccountNumber.trim();
+    let chosenAcct = typedAccount
+      ? payoutAccounts.find(
+          (a) => a.provider === withdrawMethod && a.accountNumber === typedAccount
+        )
+      : payoutAccounts.find((a) => a.id === selectedAcctId);
+
+    if (!chosenAcct && typedAccount) {
       try {
         chosenAcct = await addPayoutAccountToFirestore({
           technicianId,
           technicianName: currentUser?.name || 'Technician',
           provider: withdrawMethod,
           accountTitle: currentUser?.name || 'Technician',
-          accountNumber: withdrawAccountNumber.trim(),
+          accountNumber: typedAccount,
           bankName: withdrawMethod === 'bank' ? 'Commercial Bank' : '',
           branchName: '',
         });
@@ -379,7 +387,7 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
         // fallback
       }
     }
-    if (!chosenAcct && !withdrawAccountNumber.trim()) {
+    if (!chosenAcct && !typedAccount) {
       setErrorMsg(
         isBangla
           ? 'অনুগ্রহ করে উত্তোলনের মেথড এবং অ্যাকাউন্ট/ফোন নম্বর দিন।'
@@ -410,14 +418,15 @@ export const TechnicianWalletSection: React.FC<Props> = ({ technicianId }) => {
         void requestWithdrawal({
           payoutAccountId: chosenAcct.id,
           amount: withdrawAmount,
-          idempotencyKey: `${technicianId}-${Date.now()}`,
+          idempotencyKey: `${technicianId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         }).catch(() => {});
       }
-      notify(
-        isBangla
-          ? `৳${withdrawAmount} উত্তোলনের আবেদন (${chosenAcct.provider.toUpperCase()} - ${chosenAcct.accountNumber}) রিয়েল-টাইমে পাঠানো হয়েছে!`
-          : `Withdrawal request of ৳${withdrawAmount} submitted live!`
-      );
+      const successMsg = isBangla
+        ? `🎉 ৳${withdrawAmount} উত্তোলনের আবেদন (${chosenAcct.provider.toUpperCase()} - ${chosenAcct.accountNumber}) সফলভাবে পাঠানো হয়েছে!`
+        : `🎉 Withdrawal request of ৳${withdrawAmount} submitted successfully!`;
+      triggerConfettiBurst();
+      showGlobalToast(successMsg);
+      notify(successMsg);
       setWithdrawAccountNumber('');
     } catch (err: any) {
       setErrorMsg(

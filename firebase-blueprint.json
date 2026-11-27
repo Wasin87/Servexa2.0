@@ -126,7 +126,9 @@
         "overallRating": { "type": "number" },
         "comment": { "type": "string", "maxLength": 1000 },
         "serviceName": { "type": "string", "maxLength": 150 },
-        "createdAt": { "type": "string", "maxLength": 50 }
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 },
+        "isEdited": { "type": "boolean" }
       },
       "required": ["id", "bookingId", "customerId", "technicianId", "overallRating"]
     },

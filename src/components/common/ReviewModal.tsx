@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Star, X, Check } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useApp } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { Booking } from '../../types';
+import { Booking, Review } from '../../types';
 
 interface ReviewModalProps {
   booking: Booking;
+  existingReview?: Review;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -20,51 +21,96 @@ const FEEDBACK_QUICK_TAGS = [
   { bn: 'পরিচ্ছন্নতা বজায় রেখেছেন', en: 'Clean work area' }
 ];
 
-export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, isOpen, onClose }) => {
+export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, existingReview, isOpen, onClose }) => {
   const { t, isBangla } = useLanguage();
-  const { submitReview } = useApp();
+  const { submitReview, updateReview } = useApp();
   const { currentUser } = useAuth();
   const { showToast, triggerConfettiBurst } = useToast();
 
-  const [overallRating, setOverallRating] = useState<number>(5);
-  const [workQuality, setWorkQuality] = useState<number>(5);
-  const [behavior, setBehavior] = useState<number>(5);
-  const [punctuality, setPunctuality] = useState<number>(5);
-  const [priceFairness, setPriceFairness] = useState<number>(5);
-  const [selectedTags, setSelectedTags] = useState<string[]>(['সময়মতো এসেছেন', 'নিখুঁত কাজ']);
-  const [comment, setComment] = useState<string>('');
+  const [overallRating, setOverallRating] = useState<number>(existingReview?.overallRating ?? 5);
+  const [workQuality, setWorkQuality] = useState<number>(existingReview?.workQuality ?? 5);
+  const [behavior, setBehavior] = useState<number>(existingReview?.behavior ?? 5);
+  const [punctuality, setPunctuality] = useState<number>(existingReview?.punctuality ?? 5);
+  const [priceFairness, setPriceFairness] = useState<number>(existingReview?.priceFairness ?? 5);
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    existingReview?.feedbackTags ?? ['সময়মতো এসেছেন', 'নিখুঁত কাজ']
+  );
+  const [comment, setComment] = useState<string>(existingReview?.comment ?? '');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (existingReview) {
+      setOverallRating(existingReview.overallRating || 5);
+      setWorkQuality(existingReview.workQuality || 5);
+      setBehavior(existingReview.behavior || 5);
+      setPunctuality(existingReview.punctuality || 5);
+      setPriceFairness(existingReview.priceFairness || 5);
+      setSelectedTags(existingReview.feedbackTags || []);
+      setComment(existingReview.comment || '');
+    } else {
+      setOverallRating(5);
+      setWorkQuality(5);
+      setBehavior(5);
+      setPunctuality(5);
+      setPriceFairness(5);
+      setSelectedTags(['সময়মতো এসেছেন', 'নিখুঁত কাজ']);
+      setComment('');
+    }
+  }, [isOpen, existingReview?.id]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const isEditing = Boolean(existingReview);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    submitReview({
-      bookingId: booking.id,
-      customerId: currentUser?.id || booking.customerId || '',
-      customerName: currentUser?.name || booking.customerName || (isBangla ? 'গ্রাহক' : 'Customer'),
-      customerAvatar: currentUser?.avatar || '',
-      technicianId: booking.technicianId,
-      overallRating,
-      workQuality,
-      behavior,
-      punctuality,
-      priceFairness,
-      feedbackTags: selectedTags,
-      comment:
-        comment.trim() ||
-        (isBangla
-          ? 'চমৎকার ও বিশ্বস্ত সার্ভিস! সমস্যার দ্রুত ও স্থায়ী সমাধান পেয়েছি।'
-          : 'Great and trustworthy service! The issue was fixed quickly and cleanly.'),
-      serviceName: isBangla ? booking.serviceNameBn : booking.serviceNameEn
-    });
+    const finalComment =
+      comment.trim() ||
+      (isBangla
+        ? 'চমৎকার ও বিশ্বস্ত সার্ভিস! সমস্যার দ্রুত ও স্থায়ী সমাধান পেয়েছি।'
+        : 'Great and trustworthy service! The issue was fixed quickly and cleanly.');
 
-    setIsSubmitting(false);
-    triggerConfettiBurst();
-    showToast(isBangla ? 'আপনার মূল্যবান রিভিউ জমা হয়েছে!' : 'Your review has been submitted!');
-    onClose();
+    try {
+      if (existingReview) {
+        await updateReview(existingReview.id, {
+          customerName: currentUser?.name || existingReview.customerName,
+          customerAvatar: currentUser?.avatar || existingReview.customerAvatar,
+          overallRating,
+          workQuality,
+          behavior,
+          punctuality,
+          priceFairness,
+          feedbackTags: selectedTags,
+          comment: finalComment,
+        });
+        triggerConfettiBurst();
+        showToast(isBangla ? 'আপনার ফিডব্যাক ও রিভিউ সফলভাবে আপডেট হয়েছে!' : 'Your review has been updated successfully!');
+      } else {
+        submitReview({
+          bookingId: booking.id,
+          customerId: currentUser?.id || booking.customerId || '',
+          customerName: currentUser?.name || booking.customerName || (isBangla ? 'গ্রাহক' : 'Customer'),
+          customerAvatar: currentUser?.avatar || '',
+          technicianId: booking.technicianId,
+          overallRating,
+          workQuality,
+          behavior,
+          punctuality,
+          priceFairness,
+          feedbackTags: selectedTags,
+          comment: finalComment,
+          serviceName: isBangla ? booking.serviceNameBn : booking.serviceNameEn
+        });
+        triggerConfettiBurst();
+        showToast(isBangla ? 'আপনার মূল্যবান রিভিউ জমা হয়েছে!' : 'Your review has been submitted!');
+      }
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const renderStarSelector = (value: number, onChange: (val: number) => void) => (
@@ -89,12 +135,16 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, isOpen, onClo
   );
 
   return (
-    <div className="fixed inset-0 z-[3100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 overflow-hidden">
+    <div className="fixed inset-0 z-[10050] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg max-h-[88vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6">
         <div className="flex items-center justify-between pb-4 border-b border-zinc-200 dark:border-zinc-800">
           <div>
             <h3 className="font-black text-base text-zinc-900 dark:text-zinc-100">
-              {t.review.title}
+              {isEditing
+                ? isBangla
+                  ? 'ফিডব্যাক ও রিভিউ এডিট করুন'
+                  : 'Edit Your Feedback & Review'
+                : t.review.title}
             </h3>
             <p className="text-xs text-zinc-500 mt-0.5">
               {booking.technicianName} · {isBangla ? booking.serviceNameBn : booking.serviceNameEn}
@@ -206,7 +256,11 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, isOpen, onClo
               disabled={isSubmitting}
               className="px-5 py-2.5 text-xs font-black rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-md transition-colors cursor-pointer"
             >
-              {t.review.submitReview}
+              {isEditing
+                ? isBangla
+                  ? 'আপডেট সংরক্ষণ করুন'
+                  : 'Save Updated Feedback'
+                : t.review.submitReview}
             </button>
           </div>
         </form>

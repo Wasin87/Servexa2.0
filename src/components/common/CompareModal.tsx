@@ -47,8 +47,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({ isOpen, onClose }) =
   const bestExp = comparedList.reduce((prev, curr) => (curr.experienceYears > prev.experienceYears ? curr : prev), comparedList[0]);
 
   return (
-    <div className="fixed inset-0 z-55 flex items-center justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-5xl bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-[10050] flex items-center justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-5xl bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900">
           <div>

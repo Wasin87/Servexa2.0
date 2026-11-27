@@ -31,6 +31,23 @@ import {
   Flame,
   Plus,
   Edit3,
+  Mail,
+  Lock,
+  EyeOff,
+  Ban,
+  Flag,
+  Unlock,
+  Droplets,
+  Wind,
+  Snowflake,
+  RefreshCw,
+  Hammer,
+  Key,
+  Paintbrush,
+  Monitor,
+  BatteryCharging,
+  Wifi,
+  Tv,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -38,6 +55,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { DashboardShell, DashboardNavGroup, DashboardKpiItem } from '../components/common/DashboardShell';
 import { calculateTechnicianCompletion } from '../utils/profileCompletion';
+import { toBengaliNumber } from '../utils/geoUtils';
 import { Technician, Booking, ReportItem, WarrantyClaim, ServiceCategory } from '../types';
 import { AdminRulesManagement } from '../components/admin/AdminRulesManagement';
 import { AdminFinancialDashboard } from '../components/admin/AdminFinancialDashboard';
@@ -49,6 +67,43 @@ import {
   subscribeToWithdrawals,
 } from '../services/firestoreFinanceService';
 import { TechnicianMap } from '../components/map/TechnicianMap';
+
+const ADMIN_CATEGORY_ICON_MAP: Record<string, React.ElementType> = {
+  Zap,
+  Droplets,
+  Wind,
+  Snowflake,
+  RefreshCw,
+  ShieldCheck,
+  Hammer,
+  Key,
+  Paintbrush,
+  Sparkles,
+  Monitor,
+  BatteryCharging,
+  Wifi,
+  Tv,
+  Wrench,
+  Tool: Wrench,
+};
+
+const ADMIN_LEGACY_SKILL_ALIASES: Record<string, string[]> = {
+  appliance_repair: ['appliance'],
+  generator_service: ['generator'],
+  cctv_installation: ['cctv'],
+  home_cleaning: ['water_purifier'],
+};
+
+const techMatchesCategory = (tech: Technician, cat: ServiceCategory) => {
+  const aliases = ADMIN_LEGACY_SKILL_ALIASES[cat.id] || [];
+  return (tech.skills || []).some(
+    (s) =>
+      s === cat.id ||
+      aliases.includes(s) ||
+      s.toLowerCase() === (cat.nameEn || '').toLowerCase() ||
+      s === cat.nameBn
+  );
+};
 
 export const AdminDashboard: React.FC = () => {
   const {
@@ -67,10 +122,13 @@ export const AdminDashboard: React.FC = () => {
     deleteWarrantyClaim,
     updateBookingStatus,
     deleteBooking,
-    deleteTechnician
+    deleteTechnician,
+    toggleBlockTechnician,
+    adminReportTechnician,
+    updateTechnicianProfile
   } = useApp();
   const { t, isBangla } = useLanguage();
-  const { authTokenReady, currentUser, updateProfile } = useAuth();
+  const { authTokenReady, currentUser, updateProfile, updateCredentials } = useAuth();
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
@@ -88,7 +146,11 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'fleet_map' | 'disputes' | 'warranties' | 'categories' | 'rules' | 'finance' | 'profile'>(resolveTabFromLocation);
   const [adminName, setAdminName] = useState(currentUser?.name || 'Wasin Ahmed');
+  const [adminEmail, setAdminEmail] = useState(currentUser?.email || '');
   const [adminPhone, setAdminPhone] = useState(currentUser?.phone || '+8801700000000');
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [adminAvatar, setAdminAvatar] = useState(currentUser?.avatar || '');
   const [adminCity, setAdminCity] = useState(currentUser?.city || 'Dhaka');
   const [adminArea, setAdminArea] = useState(currentUser?.area || 'Uttara');
@@ -123,30 +185,81 @@ export const AdminDashboard: React.FC = () => {
 
   const handleSaveAdminProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingAdminProfile(true);
     setProfileErrorToast(null);
-    const saved = await updateProfile({
+    setProfileToast(null);
+
+    const cleanEmail = adminEmail.trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setProfileErrorToast(
+        isBangla ? 'সঠিক ইমেইল ঠিকানা লিখুন।' : 'Please enter a valid email address.'
+      );
+      return;
+    }
+
+    const trimmedNewPass = adminNewPassword.trim();
+    const trimmedConfirmPass = adminConfirmPassword.trim();
+    if (trimmedNewPass || trimmedConfirmPass) {
+      if (trimmedNewPass.length < 6) {
+        setProfileErrorToast(
+          isBangla
+            ? 'নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।'
+            : 'New password must be at least 6 characters.'
+        );
+        return;
+      }
+      if (trimmedNewPass !== trimmedConfirmPass) {
+        setProfileErrorToast(
+          isBangla
+            ? 'নতুন পাসওয়ার্ড ও নিশ্চিত পাসওয়ার্ড মেলেনি।'
+            : 'New password and confirm password do not match.'
+        );
+        return;
+      }
+    }
+
+    setSavingAdminProfile(true);
+    const res = await updateCredentials({
       name: adminName.trim(),
+      email: cleanEmail,
       phone: adminPhone.trim(),
+      ...(trimmedNewPass ? { password: trimmedNewPass } : {}),
       avatar: adminAvatar.trim(),
       city: adminCity.trim(),
       area: adminArea.trim()
     });
     setSavingAdminProfile(false);
-    if (saved) {
-      setProfileToast(isBangla ? 'অ্যাডমিন প্রোফাইল সফলভাবে আপডেট হয়েছে!' : 'Admin profile successfully updated!');
+
+    if (res.success) {
+      setAdminNewPassword('');
+      setAdminConfirmPassword('');
+      setProfileToast(
+        trimmedNewPass
+          ? isBangla
+            ? 'অ্যাডমিন প্রোফাইল, ইমেইল ও নতুন পাসওয়ার্ড সফলভাবে আপডেট হয়েছে!'
+            : 'Admin profile, email & new password updated successfully!'
+          : isBangla
+          ? 'অ্যাডমিন প্রোফাইল ও ক্রেডেনশিয়াল সফলভাবে আপডেট হয়েছে!'
+          : 'Admin profile & credentials successfully updated!'
+      );
       setTimeout(() => setProfileToast(null), 4000);
     } else {
       setProfileErrorToast(
-        isBangla
-          ? 'অ্যাডমিন প্রোফাইল ডাটাবেসে সংরক্ষণ করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।'
-          : 'Could not save admin profile to database. Please try again.'
+        res.error ||
+          (isBangla
+            ? 'অ্যাডমিন প্রোফাইল ডাটাবেসে সংরক্ষণ করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।'
+            : 'Could not save admin profile to database. Please try again.')
       );
     }
   };
   const [techSearch, setTechSearch] = useState('');
   const [bookingFilterStatus, setBookingFilterStatus] = useState<string>('ALL');
   const [techToDelete, setTechToDelete] = useState<Technician | null>(null);
+  const [techToReport, setTechToReport] = useState<Technician | null>(null);
+  const [reportReasonInput, setReportReasonInput] = useState('গ্রাহকের সাথে অসদাচরণ / নীতিমালা ভঙ্গ');
+  const [reportDescInput, setReportDescInput] = useState('');
+  const [techToBlock, setTechToBlock] = useState<Technician | null>(null);
+  const [blockReasonInput, setBlockReasonInput] = useState('');
+  const [techActionSubmitting, setTechActionSubmitting] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
   const [reportToDelete, setReportToDelete] = useState<ReportItem | null>(null);
   const [warrantyToDelete, setWarrantyToDelete] = useState<WarrantyClaim | null>(null);
@@ -238,15 +351,79 @@ export const AdminDashboard: React.FC = () => {
     setTimeout(() => setDeleteToast(null), 3500);
   };
 
+  const handleConfirmReportTechnician = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!techToReport) return;
+    setTechActionSubmitting(true);
+    await adminReportTechnician(
+      techToReport,
+      reportReasonInput.trim(),
+      reportDescInput.trim() || reportReasonInput.trim()
+    );
+    setTechActionSubmitting(false);
+    setDeleteToast(
+      isBangla
+        ? `${techToReport.name}-এর বিরুদ্ধে অফিশিয়াল রিপোর্ট ও সতর্কবার্তা পাঠানো হয়েছে।`
+        : `Official report & warning issued for ${techToReport.name}.`
+    );
+    setTechToReport(null);
+    setReportDescInput('');
+    setTimeout(() => setDeleteToast(null), 3500);
+  };
+
+  const handleConfirmBlockToggle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!techToBlock) return;
+    setTechActionSubmitting(true);
+    const nextBlocked = !techToBlock.isBlocked;
+    await toggleBlockTechnician(techToBlock.id, nextBlocked, blockReasonInput.trim());
+    setTechActionSubmitting(false);
+    setDeleteToast(
+      nextBlocked
+        ? isBangla
+          ? `টেকনিশিয়ান ${techToBlock.name}-কে ব্লক করা হয়েছে।`
+          : `Technician ${techToBlock.name} has been blocked.`
+        : isBangla
+        ? `টেকনিশিয়ান ${techToBlock.name}-কে আনব্লক করা হয়েছে।`
+        : `Technician ${techToBlock.name} has been unblocked.`
+    );
+    setTechToBlock(null);
+    setBlockReasonInput('');
+    setTimeout(() => setDeleteToast(null), 3500);
+  };
+
+  const handleToggleInspectedTechSkill = async (tech: Technician, cat: ServiceCategory) => {
+    const currentlyHas = techMatchesCategory(tech, cat);
+    const aliases = ADMIN_LEGACY_SKILL_ALIASES[cat.id] || [];
+    const nextSkills = currentlyHas
+      ? (tech.skills || []).filter(
+          (s) =>
+            s !== cat.id &&
+            !aliases.includes(s) &&
+            s.toLowerCase() !== cat.nameEn.toLowerCase() &&
+            s !== cat.nameBn
+        )
+      : [...(tech.skills || []), cat.id];
+
+    await updateTechnicianProfile(tech.id, { skills: nextSkills });
+    setDeleteToast(
+      isBangla
+        ? `${tech.name}-এর সার্ভিস ক্যাটাগরি আপডেট হয়েছে।`
+        : `Updated service categories for ${tech.name}.`
+    );
+    setTimeout(() => setDeleteToast(null), 3000);
+  };
+
   useEffect(() => {
     if (currentUser) {
       setAdminName(currentUser.name || 'Wasin Ahmed');
+      setAdminEmail(currentUser.email || '');
       setAdminPhone(currentUser.phone || '+8801700000000');
       setAdminAvatar(currentUser.avatar || '');
       setAdminCity(currentUser.city || 'Dhaka');
       setAdminArea(currentUser.area || 'Uttara');
     }
-  }, [currentUser?.id, currentUser?.name, currentUser?.phone, currentUser?.avatar, currentUser?.city, currentUser?.area]);
+  }, [currentUser?.id, currentUser?.name, currentUser?.email, currentUser?.phone, currentUser?.avatar, currentUser?.city, currentUser?.area]);
 
   useEffect(() => {
     const param = searchParams.get('tab');
@@ -628,12 +805,17 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             )}
                             <div>
-                              <div className="font-bold text-zinc-900 dark:text-white flex items-center gap-1">
+                              <div className="font-bold text-zinc-900 dark:text-white flex flex-wrap items-center gap-1.5">
                                 <span>{tech.name}</span>
                                 {tech.platformVerified && <span className="text-blue-500 font-bold">✓</span>}
                                 {!tech.skillVerified && (
                                   <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 text-[9px] font-black">
                                     {isBangla ? 'নতুন' : 'New'}
+                                  </span>
+                                )}
+                                {tech.isBlocked && (
+                                  <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-[9px] font-black">
+                                    🚫 {isBangla ? 'ব্লককৃত' : 'Blocked'}
                                   </span>
                                 )}
                               </div>
@@ -758,7 +940,7 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                         </td>
 
-                        {/* Inspect & Delete Action Buttons */}
+                        {/* Inspect, Report, Block/Unblock & Delete Action Buttons */}
                         <td className="p-4">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
@@ -771,9 +953,44 @@ export const AdminDashboard: React.FC = () => {
                               <span>{isBangla ? 'বিস্তারিত ও NID' : 'Inspect'}</span>
                             </button>
                             <button
+                              type="button"
+                              onClick={() => {
+                                setTechToReport(tech);
+                                setReportReasonInput(isBangla ? 'গ্রাহকের সাথে অসদাচরণ / নীতিমালা ভঙ্গ' : 'Policy Violation / Misconduct');
+                                setReportDescInput('');
+                              }}
+                              className="p-2 rounded-xl text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-200/70 dark:border-amber-900/40 transition-colors cursor-pointer"
+                              title={isBangla ? 'রিপোর্ট / সতর্কবার্তা পাঠান' : 'Report / Warn Technician'}
+                              aria-label={isBangla ? 'রিপোর্ট' : 'Report Technician'}
+                            >
+                              <Flag className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTechToBlock(tech);
+                                setBlockReasonInput(tech.blockedReason || '');
+                              }}
+                              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                                tech.isBlocked
+                                  ? 'text-emerald-600 border-emerald-200 dark:border-emerald-900/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                  : 'text-rose-600 border-rose-200 dark:border-rose-900/40 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                              }`}
+                              title={
+                                tech.isBlocked
+                                  ? isBangla ? 'টেকনিশিয়ান আনব্লক করুন' : 'Unblock Technician'
+                                  : isBangla ? 'টেকনিশিয়ান ব্লক করুন' : 'Block Technician'
+                              }
+                              aria-label={tech.isBlocked ? 'Unblock Technician' : 'Block Technician'}
+                            >
+                              {tech.isBlocked ? <Unlock className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setTechToDelete(tech)}
                               className="p-2 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                               title={isBangla ? 'মিস্ত্রি মুছে ফেলুন' : 'Delete Technician'}
+                              aria-label={isBangla ? 'মিস্ত্রি মুছে ফেলুন' : 'Delete Technician'}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1174,48 +1391,60 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {categories.map((cat) => (
-              <div key={cat.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-2.5 flex flex-col justify-between">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-2xl">{cat.icon || '🔧'}</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-bold">
-                        {cat.activeProfessionals}+ {isBangla ? 'মিস্ত্রি' : 'Pros'}
+            {categories.map((cat) => {
+              const IconComp = ADMIN_CATEGORY_ICON_MAP[cat.icon];
+              const liveTechCount = technicians.filter(
+                (t) => !t.isBlocked && techMatchesCategory(t, cat)
+              ).length;
+              return (
+                <div key={cat.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-2.5 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="w-9 h-9 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xl">
+                        {IconComp ? <IconComp className="w-5 h-5" /> : (cat.icon || '🔧')}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => openEditCategoryModal(cat)}
-                        title={isBangla ? 'সম্পাদনা' : 'Edit Category'}
-                        aria-label={isBangla ? 'সম্পাদনা' : 'Edit Category'}
-                        className="p-1.5 rounded-lg text-zinc-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCatToDelete(cat)}
-                        title={isBangla ? 'ডিলিট' : 'Delete Category'}
-                        aria-label={isBangla ? 'ডিলিট' : 'Delete Category'}
-                        className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
+                          liveTechCount > 0
+                            ? 'bg-emerald-500/10 text-emerald-600'
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                        }`}>
+                          {isBangla ? `${toBengaliNumber(liveTechCount)} মিস্ত্রি` : `${liveTechCount} Pros`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openEditCategoryModal(cat)}
+                          title={isBangla ? 'সম্পাদনা' : 'Edit Category'}
+                          aria-label={isBangla ? 'সম্পাদনা' : 'Edit Category'}
+                          className="p-1.5 rounded-lg text-zinc-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCatToDelete(cat)}
+                          title={isBangla ? 'ডিলিট' : 'Delete Category'}
+                          aria-label={isBangla ? 'ডিলিট' : 'Delete Category'}
+                          className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+                    <h4 className="font-extrabold text-sm text-zinc-900 dark:text-white">
+                      {isBangla ? cat.nameBn : cat.nameEn}
+                    </h4>
+                    <p className="text-xs text-zinc-500 line-clamp-2">
+                      {isBangla ? cat.descriptionBn : cat.descriptionEn}
+                    </p>
                   </div>
-                  <h4 className="font-extrabold text-sm text-zinc-900 dark:text-white">
-                    {isBangla ? cat.nameBn : cat.nameEn}
-                  </h4>
-                  <p className="text-xs text-zinc-500 line-clamp-2">
-                    {isBangla ? cat.descriptionBn : cat.descriptionEn}
-                  </p>
+                  <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
+                    <span className="text-zinc-500">{isBangla ? 'শুরু মূল্য:' : 'Starting at:'}</span>
+                    <span className="font-black text-emerald-600">৳{cat.startingPrice}</span>
+                  </div>
                 </div>
-                <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
-                  <span className="text-zinc-500">{isBangla ? 'শুরু মূল্য:' : 'Starting at:'}</span>
-                  <span className="font-black text-emerald-600">৳{cat.startingPrice}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1254,14 +1483,19 @@ export const AdminDashboard: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                  {isBangla ? 'ইমেইল (Read-only)' : 'Email (Read-only)'}
+                  {isBangla ? 'অ্যাডমিন লগইন ইমেইল' : 'Admin Login Email'}
                 </label>
-                <input
-                  type="email"
-                  disabled
-                  value={currentUser?.email || ''}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 cursor-not-allowed"
-                />
+                <div className="relative">
+                  <Mail className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="admin@servexa.com"
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
@@ -1272,8 +1506,53 @@ export const AdminDashboard: React.FC = () => {
                   value={adminPhone}
                   onChange={(e) => setAdminPhone(e.target.value)}
                   placeholder="+8801700000000"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold"
                 />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-black text-zinc-800 dark:text-zinc-200">
+                  <Lock className="w-3.5 h-3.5 text-orange-500" />
+                  <span>{isBangla ? 'লগইন পাসওয়ার্ড পরিবর্তন (ঐচ্ছিক)' : 'Change Login Password (Optional)'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminPassword((prev) => !prev)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-orange-600 cursor-pointer"
+                >
+                  {showAdminPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showAdminPassword ? (isBangla ? 'লুকান' : 'Hide') : (isBangla ? 'দেখুন' : 'Show')}</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {isBangla ? 'নতুন পাসওয়ার্ড' : 'New Password'}
+                  </label>
+                  <input
+                    type={showAdminPassword ? 'text' : 'password'}
+                    value={adminNewPassword}
+                    onChange={(e) => setAdminNewPassword(e.target.value)}
+                    placeholder={isBangla ? 'কমপক্ষে ৬ অক্ষর' : 'Minimum 6 characters'}
+                    autoComplete="new-password"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {isBangla ? 'নতুন পাসওয়ার্ড নিশ্চিত করুন' : 'Confirm New Password'}
+                  </label>
+                  <input
+                    type={showAdminPassword ? 'text' : 'password'}
+                    value={adminConfirmPassword}
+                    onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                    placeholder={isBangla ? 'পুনরায় নতুন পাসওয়ার্ড লিখুন' : 'Re-enter new password'}
+                    autoComplete="new-password"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1370,16 +1649,23 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Dispute Resolution Modal */}
       {activeReportId && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between border-b pb-3 border-zinc-100 dark:border-zinc-800">
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="font-black text-sm text-zinc-900 dark:text-white">
                 {isBangla ? 'অ্যাডমিন বিরোধ নিষ্পত্তি নোট' : 'Admin Dispute Resolution Note'}
               </h3>
-              <button onClick={() => setActiveReportId(null)} className="text-zinc-400 hover:text-zinc-600">✕</button>
+              <button
+                type="button"
+                onClick={() => setActiveReportId(null)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 text-xs">
               <div>
                 <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
                   {isBangla ? 'অ্যাডমিন সিদ্ধান্ত ও সমঝোতা নোট:' : 'Admin Decision & Settlement Note:'}
@@ -1397,38 +1683,210 @@ export const AdminDashboard: React.FC = () => {
                   className="w-full p-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
                 />
               </div>
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setActiveReportId(null)} className="px-4 py-2 rounded-xl border font-bold">
-                  {isBangla ? 'বাতিল' : 'Cancel'}
+            <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900 text-xs">
+              <button type="button" onClick={() => setActiveReportId(null)} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold cursor-pointer">
+                {isBangla ? 'বন্ধ করুন' : 'Close'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResolveReportSubmit(activeReportId)}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md cursor-pointer"
+              >
+                {isBangla ? 'মীমাংসা নিশ্চিত করুন (Resolve)' : 'Confirm Resolution'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report / Warn Technician Modal */}
+      {techToReport && (
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2 text-amber-600">
+                <Flag className="w-4 h-4 shrink-0" />
+                <h3 className="font-black text-sm text-zinc-900 dark:text-white">
+                  {isBangla ? 'টেকনিশিয়ানের বিরুদ্ধে রিপোর্ট / সতর্কবার্তা' : 'Report / Warn Technician'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTechToReport(null)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReportTechnician} className="flex-1 min-h-0 flex flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 font-semibold">
+                  {isBangla ? 'লক্ষ্য টেকনিশিয়ান:' : 'Target Technician:'} <span className="font-black">{techToReport.name}</span> ({techToReport.phone})
+                </div>
+                <div>
+                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                    {isBangla ? 'রিপোর্টের কারণ:' : 'Report Reason:'}
+                  </label>
+                  <select
+                    value={reportReasonInput}
+                    onChange={(e) => setReportReasonInput(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold"
+                  >
+                    <option value={isBangla ? 'গ্রাহকের সাথে অসদাচরণ / নীতিমালা ভঙ্গ' : 'Customer Misconduct / Policy Violation'} className="bg-white dark:bg-zinc-900">
+                      {isBangla ? 'গ্রাহকের সাথে অসদাচরণ / নীতিমালা ভঙ্গ' : 'Customer Misconduct / Policy Violation'}
+                    </option>
+                    <option value={isBangla ? 'অতিরিক্ত টাকা দাবি / অননুমোদিত চার্জ' : 'Overcharging / Unauthorized Fee'} className="bg-white dark:bg-zinc-900">
+                      {isBangla ? 'অতিরিক্ত টাকা দাবি / অননুমোদিত চার্জ' : 'Overcharging / Unauthorized Fee'}
+                    </option>
+                    <option value={isBangla ? 'ভুয়া বা অসম্পূর্ণ NID তথ্য' : 'Invalid or Suspicious NID Document'} className="bg-white dark:bg-zinc-900">
+                      {isBangla ? 'ভুয়া বা অসম্পূর্ণ NID তথ্য' : 'Invalid or Suspicious NID Document'}
+                    </option>
+                    <option value={isBangla ? 'কাজ অসম্পূর্ণ রাখা / দেরিতে উপস্থিতি' : 'Incomplete Work / Repeated Delay'} className="bg-white dark:bg-zinc-900">
+                      {isBangla ? 'কাজ অসম্পূর্ণ রাখা / দেরিতে উপস্থিতি' : 'Incomplete Work / Repeated Delay'}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                    {isBangla ? 'বিস্তারিত বিবরণ ও সতর্কবার্তা:' : 'Detailed Note / Warning Message:'}
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={reportDescInput}
+                    onChange={(e) => setReportDescInput(e.target.value)}
+                    placeholder={
+                      isBangla
+                        ? 'অভিযোগের বিস্তারিত লিখুন যা টেকনিশিয়ান নোটিফিকেশন ও ডিসপুট কেন্দ্রে সংরক্ষিত থাকবে...'
+                        : 'Write details of this administrative report or warning...'
+                    }
+                    className="w-full p-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+                  />
+                </div>
+              </div>
+              <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900">
+                <button type="button" onClick={() => setTechToReport(null)} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold cursor-pointer">
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleResolveReportSubmit(activeReportId)}
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md"
-                >
-                  {isBangla ? 'মীমাংসা নিশ্চিত করুন (Resolve)' : 'Confirm Resolution'}
+                <button type="submit" disabled={techActionSubmitting} className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black cursor-pointer">
+                  {techActionSubmitting
+                    ? isBangla ? 'পাঠানো হচ্ছে...' : 'Submitting...'
+                    : isBangla ? 'রিপোর্ট দাখিল করুন' : 'Submit Report'}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Block / Unblock Technician Modal */}
+      {techToBlock && (
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
+              <div className={`flex items-center gap-2 ${techToBlock.isBlocked ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {techToBlock.isBlocked ? <Unlock className="w-4 h-4 shrink-0" /> : <Ban className="w-4 h-4 shrink-0" />}
+                <h3 className="font-black text-sm text-zinc-900 dark:text-white">
+                  {techToBlock.isBlocked
+                    ? isBangla ? 'টেকনিশিয়ান আনব্লক করুন' : 'Unblock Technician'
+                    : isBangla ? 'টেকনিশিয়ান ব্লক করুন' : 'Block Technician'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTechToBlock(null)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
+
+            <form onSubmit={handleConfirmBlockToggle} className="flex-1 min-h-0 flex flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+                <p className="text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                  {techToBlock.isBlocked ? (
+                    isBangla
+                      ? `আপনি কি "${techToBlock.name}"-কে আনব্লক করতে চান? আনব্লক করলে তিনি পুনরায় বুকিং ও সার্চ তালিকায় প্রদর্শিত হবেন এবং কাজ করতে পারবেন।`
+                      : `Restore "${techToBlock.name}" so they reappear in search/booking and can accept jobs again?`
+                  ) : (
+                    isBangla
+                      ? `আপনি কি "${techToBlock.name}"-কে ব্লক করতে চান? ব্লক করলে তিনি নতুন কোনো কাজ নিতে পারবেন না এবং গ্রাহকের তালিকা থেকে লুকানো থাকবে।`
+                      : `Block "${techToBlock.name}"? They will be hidden from customer discovery/booking and prevented from accepting jobs.`
+                  )}
+                </p>
+
+                {!techToBlock.isBlocked && (
+                  <div>
+                    <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                      {isBangla ? 'ব্লক করার কারণ (টেকনিশিয়ান দেখতে পাবেন):' : 'Reason for Blocking (visible to technician):'}
+                    </label>
+                    <textarea
+                      rows={3}
+                      required
+                      value={blockReasonInput}
+                      onChange={(e) => setBlockReasonInput(e.target.value)}
+                      placeholder={
+                        isBangla
+                          ? 'যেমন: একাধিক গ্রাহকের অভিযোগ ও নীতিমালা লঙ্ঘন...'
+                          : 'e.g., Multiple customer complaints & policy violation...'
+                      }
+                      className="w-full p-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900">
+                <button type="button" onClick={() => setTechToBlock(null)} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold cursor-pointer">
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={techActionSubmitting}
+                  className={`px-5 py-2 rounded-xl text-white font-black cursor-pointer ${
+                    techToBlock.isBlocked ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-600 hover:bg-rose-500'
+                  }`}
+                >
+                  {techActionSubmitting
+                    ? isBangla ? 'প্রক্রিয়াধীন...' : 'Processing...'
+                    : techToBlock.isBlocked
+                    ? isBangla ? 'হ্যাঁ, আনব্লক করুন' : 'Confirm Unblock'
+                    : isBangla ? 'হ্যাঁ, ব্লক করুন' : 'Confirm Block'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
       {/* Delete Technician Confirmation Modal */}
       {techToDelete && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="p-2.5 rounded-2xl bg-rose-500/15 border border-rose-500/30">
-                <Trash2 className="w-5 h-5" />
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2.5 text-rose-600">
+                <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/30">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <h3 className="font-black text-sm text-zinc-900 dark:text-white">
+                  {isBangla ? 'টেকনিশিয়ান স্থায়ীভাবে ডিলিট করুন' : 'Delete Technician'}
+                </h3>
               </div>
-              <h3 className="font-black text-sm text-zinc-900 dark:text-white">
-                {isBangla ? 'টেকনিশিয়ান স্থায়ীভাবে ডিলিট করুন' : 'Delete Technician'}
-              </h3>
+              <button
+                type="button"
+                onClick={() => setTechToDelete(null)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
               {isBangla ? (
                 <>
                   আপনি কি নিশ্চিতভাবে <span className="font-bold text-zinc-900 dark:text-white">"{techToDelete.name}"</span> কে প্ল্যাটফর্ম থেকে মুছে ফেলতে চান? এটি মুছে ফেললে তার সকল তথ্য এবং সার্ভিস কভারেজ অপসারিত হবে।
@@ -1440,13 +1898,13 @@ export const AdminDashboard: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="shrink-0 flex items-center justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900 text-xs">
               <button
                 type="button"
                 onClick={() => setTechToDelete(null)}
-                className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100"
+                className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 cursor-pointer"
               >
-                {isBangla ? 'বাতিল' : 'Cancel'}
+                {isBangla ? 'বন্ধ করুন' : 'Close'}
               </button>
               <button
                 type="button"
@@ -1461,7 +1919,7 @@ export const AdminDashboard: React.FC = () => {
                   setTechToDelete(null);
                   setTimeout(() => setDeleteToast(null), 3500);
                 }}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md shadow-rose-600/20 cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black shadow-md shadow-rose-600/20 cursor-pointer"
               >
                 {isBangla ? 'হ্যাঁ, ডিলিট করুন' : 'Confirm Delete'}
               </button>
@@ -1475,25 +1933,25 @@ export const AdminDashboard: React.FC = () => {
         const comp = calculateTechnicianCompletion(inspectedTech);
         const missingLabels = isBangla ? comp.missingLabelsBn : comp.missingLabelsEn;
         return (
-          <div className="fixed inset-0 z-[3200] bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-            <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95">
-              <div className="flex items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
-                <div className="flex items-center gap-3.5">
+          <div className="fixed inset-0 z-[10050] bg-black/70 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+            <div className="w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95">
+              <div className="shrink-0 flex items-start justify-between gap-4 px-4 sm:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                <div className="flex items-center gap-3.5 min-w-0">
                   {inspectedTech.avatar?.trim() ? (
                     <img
                       src={inspectedTech.avatar.trim()}
                       alt={inspectedTech.name}
                       referrerPolicy="no-referrer"
-                      className="w-16 h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0"
+                      className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-orange-500 shadow-sm shrink-0"
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-2xl bg-orange-600 text-white font-black text-xl flex items-center justify-center border-2 border-orange-500 shadow-sm shrink-0">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-orange-600 text-white font-black text-xl flex items-center justify-center border-2 border-orange-500 shadow-sm shrink-0">
                       {(inspectedTech.name || 'T').charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
+                      <h3 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white truncate">
                         {inspectedTech.name}
                       </h3>
                       <span className={`px-2 py-0.5 rounded-full text-[11px] font-black tabular-nums ${
@@ -1501,13 +1959,18 @@ export const AdminDashboard: React.FC = () => {
                       }`}>
                         {isBangla ? `বায়োডাটা ${comp.percent}% সম্পূর্ণ` : `Biodata ${comp.percent}% Complete`}
                       </span>
+                      {inspectedTech.isBlocked && (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 text-[10px] font-black">
+                          🚫 {isBangla ? 'ব্লককৃত' : 'Blocked'}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-xs text-zinc-500 mt-0.5">
+                    <div className="text-xs text-zinc-500 mt-0.5 truncate">
                       📞 {inspectedTech.phone} {inspectedTech.email ? `· ✉️ ${inspectedTech.email}` : ''}
                     </div>
                     <div className="text-xs text-zinc-500 mt-0.5 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-orange-500" />
-                      <span>
+                      <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                      <span className="truncate">
                         {[inspectedTech.primaryArea, inspectedTech.district || inspectedTech.city, inspectedTech.division].filter(Boolean).join(', ') ||
                           (isBangla ? 'লোকেশন যুক্ত করা হয়নি' : 'Location not added')}
                       </span>
@@ -1517,220 +1980,235 @@ export const AdminDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setInspectTechId(null)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                  aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                  className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer shrink-0"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Completion Bar & Missing fields */}
-              <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 space-y-2 text-xs">
-                <div className="flex items-center justify-between font-bold">
-                  <span className="text-zinc-700 dark:text-zinc-300">
-                    {isBangla ? 'প্রোফাইল ও কাগজপত্রের অগ্রগতি:' : 'Profile & Document Progress:'}
-                  </span>
-                  <span className={comp.isMinReady ? 'text-emerald-600' : 'text-orange-600'}>
-                    {comp.completedCount}/{comp.totalCount} {isBangla ? 'ধাপ' : 'steps'} ({comp.percent}%)
-                  </span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${comp.isComplete ? 'bg-emerald-500' : 'bg-orange-500'}`}
-                    style={{ width: `${comp.percent}%` }}
-                  />
-                </div>
-                {missingLabels.length > 0 && (
-                  <div className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
-                    {isBangla ? 'বাকি থাকা তথ্য:' : 'Missing fields:'} {missingLabels.join(', ')}
-                  </div>
-                )}
-              </div>
-
-              {/* Biodata & Tariff Details */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-2">
-                  <div className="font-black text-zinc-800 dark:text-zinc-200">
-                    {isBangla ? 'পেশাগত বায়োডাটা' : 'Professional Biodata'}
-                  </div>
-                  <div>
-                    {isBangla ? 'অভিজ্ঞতা:' : 'Experience:'}{' '}
-                    <span className="font-bold">
-                      {inspectedTech.experienceYears || 0} {isBangla ? 'বছর' : 'years'}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
+                {/* Completion Bar & Missing fields */}
+                <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 space-y-2 text-xs">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="text-zinc-700 dark:text-zinc-300">
+                      {isBangla ? 'প্রোফাইল ও কাগজপত্রের অগ্রগতি:' : 'Profile & Document Progress:'}
+                    </span>
+                    <span className={comp.isMinReady ? 'text-emerald-600' : 'text-orange-600'}>
+                      {comp.completedCount}/{comp.totalCount} {isBangla ? 'ধাপ' : 'steps'} ({comp.percent}%)
                     </span>
                   </div>
-                  <div>
-                    {isBangla ? 'কাজের সময়সীমা:' : 'Working Hours:'}{' '}
-                    <span className="font-bold">
-                      {inspectedTech.workingHours || (isBangla ? 'নির্ধারিত নয়' : 'Not specified')}
-                    </span>
+                  <div className="w-full h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${comp.isComplete ? 'bg-emerald-500' : 'bg-orange-500'}`}
+                      style={{ width: `${comp.percent}%` }}
+                    />
                   </div>
-                  <div>
-                    {isBangla ? 'ভিজিটিং ফি:' : 'Visiting Fee:'}{' '}
-                    <span className="font-bold">৳{inspectedTech.visitingFee || 0}</span> ·{' '}
-                    {isBangla ? 'প্রারম্ভিক মূল্য:' : 'Starting Price:'}{' '}
-                    <span className="font-bold">৳{inspectedTech.startingPrice || 0}</span>
-                  </div>
-                  <div>
-                    {isBangla ? 'কভারেজ ব্যাসার্ধ:' : 'Coverage Radius:'}{' '}
-                    <span className="font-bold">
-                      {inspectedTech.serviceRadiusKm || 0} {isBangla ? 'কিমি' : 'km'}
-                    </span>
-                  </div>
-                  <div>
-                    {isBangla ? 'পোর্টফোলিও ছবি:' : 'Portfolio Photos:'}{' '}
-                    <span className="font-bold">
-                      {inspectedTech.portfolio?.length || 0}
-                      {isBangla ? 'টি' : ''}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-2">
-                  <div className="font-black text-zinc-800 dark:text-zinc-200">
-                    {isBangla ? 'বায়ো ও দক্ষতা (Skills)' : 'Bio & Skills'}
-                  </div>
-                  <p className="text-zinc-700 dark:text-zinc-300 font-semibold">
-                    {(isBangla ? inspectedTech.bioBn : inspectedTech.bioEn || inspectedTech.bioBn) ||
-                      (isBangla ? 'বায়ো যুক্ত করা হয়নি' : 'Bio not added')}
-                  </p>
-                  {(inspectedTech.aboutBn || inspectedTech.aboutEn) && (
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 italic">
-                      "{isBangla ? inspectedTech.aboutBn || inspectedTech.aboutEn : inspectedTech.aboutEn || inspectedTech.aboutBn}"
-                    </p>
+                  {missingLabels.length > 0 && (
+                    <div className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
+                      {isBangla ? 'বাকি থাকা তথ্য:' : 'Missing fields:'} {missingLabels.join(', ')}
+                    </div>
                   )}
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {inspectedTech.skills.length > 0 ? inspectedTech.skills.map(sk => (
-                      <span key={sk} className="px-2 py-0.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold text-[10px]">
-                        {sk}
+                </div>
+
+                {/* Biodata & Tariff Details */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-2">
+                    <div className="font-black text-zinc-800 dark:text-zinc-200">
+                      {isBangla ? 'পেশাগত বায়োডাটা' : 'Professional Biodata'}
+                    </div>
+                    <div>
+                      {isBangla ? 'অভিজ্ঞতা:' : 'Experience:'}{' '}
+                      <span className="font-bold">
+                        {inspectedTech.experienceYears || 0} {isBangla ? 'বছর' : 'years'}
                       </span>
-                    )) : (
-                      <span className="text-[11px] text-rose-500">
-                        {isBangla ? 'কোনো দক্ষতা নির্বাচন করা হয়নি' : 'No skills selected'}
+                    </div>
+                    <div>
+                      {isBangla ? 'কাজের সময়সীমা:' : 'Working Hours:'}{' '}
+                      <span className="font-bold">
+                        {inspectedTech.workingHours || (isBangla ? 'নির্ধারিত নয়' : 'Not specified')}
                       </span>
-                    )}
+                    </div>
+                    <div>
+                      {isBangla ? 'ভিজিটিং ফি:' : 'Visiting Fee:'}{' '}
+                      <span className="font-bold">৳{inspectedTech.visitingFee || 0}</span> ·{' '}
+                      {isBangla ? 'প্রারম্ভিক মূল্য:' : 'Starting Price:'}{' '}
+                      <span className="font-bold">৳{inspectedTech.startingPrice || 0}</span>
+                    </div>
+                    <div>
+                      {isBangla ? 'কভারেজ ব্যাসার্ধ:' : 'Coverage Radius:'}{' '}
+                      <span className="font-bold">
+                        {inspectedTech.serviceRadiusKm || 0} {isBangla ? 'কিমি' : 'km'}
+                      </span>
+                    </div>
+                    <div>
+                      {isBangla ? 'পোর্টফোলিও ছবি:' : 'Portfolio Photos:'}{' '}
+                      <span className="font-bold">
+                        {inspectedTech.portfolio?.length || 0}
+                        {isBangla ? 'টি' : ''}
+                      </span>
+                    </div>
                   </div>
+
+                  <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-2">
+                    <div className="font-black text-zinc-800 dark:text-zinc-200">
+                      {isBangla ? 'বায়ো ও নির্ধারিত ক্যাটাগরি' : 'Bio & Assigned Categories'}
+                    </div>
+                    <p className="text-zinc-700 dark:text-zinc-300 font-semibold">
+                      {(isBangla ? inspectedTech.bioBn : inspectedTech.bioEn || inspectedTech.bioBn) ||
+                        (isBangla ? 'বায়ো যুক্ত করা হয়নি' : 'Bio not added')}
+                    </p>
+                    {(inspectedTech.aboutBn || inspectedTech.aboutEn) && (
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 italic">
+                        "{isBangla ? inspectedTech.aboutBn || inspectedTech.aboutEn : inspectedTech.aboutEn || inspectedTech.aboutBn}"
+                      </p>
+                    )}
+                    <div className="pt-1">
+                      <div className="text-[11px] font-bold text-zinc-500 mb-1.5">
+                        {isBangla ? 'ক্যাটাগরি নির্ধারণ / পরিবর্তন করুন:' : 'Assign / Toggle Service Categories:'}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                        {categories.map((cat) => {
+                          const assigned = techMatchesCategory(inspectedTech, cat);
+                          return (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              onClick={() => void handleToggleInspectedTechSkill(inspectedTech, cat)}
+                              className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                                assigned
+                                  ? 'bg-orange-600 text-white border-orange-600'
+                                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700 hover:border-orange-500'
+                              }`}
+                            >
+                              {assigned ? '✓ ' : '+ '}
+                              {isBangla ? cat.nameBn : cat.nameEn}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* NID Front & Back Images */}
+                <div className="space-y-2">
+                  <div className="text-xs font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
+                    <FileCheck2 className="w-4 h-4 text-orange-500" />
+                    <span>{isBangla ? 'জাতীয় পরিচয়পত্র (NID) যাচাইকরণ ছবি' : 'National ID (NID) Verification Photos'}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800/50 space-y-2">
+                      <div className="font-bold text-zinc-700 dark:text-zinc-300">
+                        {isBangla ? 'NID সামনের অংশ (Front)' : 'NID Front Side'}
+                      </div>
+                      {inspectedTech.nidFrontImage?.trim() ? (
+                        <img
+                          src={inspectedTech.nidFrontImage.trim()}
+                          alt="NID Front"
+                          className="w-full h-40 object-cover rounded-xl border border-zinc-300 dark:border-zinc-700"
+                        />
+                      ) : (
+                        <div className="h-32 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400">
+                          {isBangla ? 'সামনের অংশ আপলোড করা হয়নি' : 'Front image not uploaded'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800/50 space-y-2">
+                      <div className="font-bold text-zinc-700 dark:text-zinc-300">
+                        {isBangla ? 'NID পেছনের অংশ (Back)' : 'NID Back Side'}
+                      </div>
+                      {inspectedTech.nidBackImage?.trim() ? (
+                        <img
+                          src={inspectedTech.nidBackImage.trim()}
+                          alt="NID Back"
+                          className="w-full h-40 object-cover rounded-xl border border-zinc-300 dark:border-zinc-700"
+                        />
+                      ) : (
+                        <div className="h-32 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400">
+                          {isBangla ? 'পেছনের অংশ আপলোড করা হয়নি' : 'Back image not uploaded'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Admin Verification Toggles & 1-Click Pass */}
+                <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => verifyTechnicianField(inspectedTech.id, 'nidVerified', !inspectedTech.nidVerified)}
+                      className={`px-3 py-2 rounded-xl font-bold cursor-pointer border ${
+                        inspectedTech.nidVerified
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700'
+                      }`}
+                    >
+                      {inspectedTech.nidVerified
+                        ? isBangla ? '✓ NID ভেরিফায়েড' : '✓ NID Verified'
+                        : isBangla ? 'NID ভেরিফাই করুন' : 'Verify NID'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => verifyTechnicianField(inspectedTech.id, 'skillVerified', !inspectedTech.skillVerified)}
+                      className={`px-3 py-2 rounded-xl font-bold cursor-pointer border ${
+                        inspectedTech.skillVerified
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-amber-500 text-white border-amber-500'
+                      }`}
+                    >
+                      {inspectedTech.skillVerified
+                        ? isBangla ? '✓ দক্ষতা উত্তীর্ণ' : '✓ Skill Passed'
+                        : isBangla ? 'দক্ষতা উত্তীর্ণ করুন' : 'Pass Skill Test'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => verifyTechnicianField(inspectedTech.id, 'platformVerified', !inspectedTech.platformVerified)}
+                      className={`px-3 py-2 rounded-xl font-bold cursor-pointer border ${
+                        inspectedTech.platformVerified
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700'
+                      }`}
+                    >
+                      {inspectedTech.platformVerified
+                        ? isBangla ? '✓ ভেরিফায়েড প্রো' : '✓ Verified Pro'
+                        : isBangla ? 'ভেরিফায়েড ব্যাজ দিন' : 'Grant Verified Badge'}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      verifyTechnicianField(inspectedTech.id, 'phoneVerified', true);
+                      verifyTechnicianField(inspectedTech.id, 'nidVerified', true);
+                      verifyTechnicianField(inspectedTech.id, 'skillVerified', true);
+                      verifyTechnicianField(inspectedTech.id, 'platformVerified', true);
+                      setDeleteToast(
+                        isBangla
+                          ? `${inspectedTech.name}-কে "দক্ষতা উত্তীর্ণ" ও সম্পূর্ণ অনুমোদন দেওয়া হয়েছে! এখন তিনি কাজ পিক করতে পারবেন।`
+                          : `${inspectedTech.name} has been marked "Skill Passed" and fully verified! They can now accept jobs.`
+                      );
+                      setTimeout(() => setDeleteToast(null), 4000);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black shadow-md cursor-pointer flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{isBangla ? '১-ক্লিকে সম্পূর্ণ অনুমোদন ও দক্ষতা উত্তীর্ণ' : 'Approve All & Pass Skill Test'}</span>
+                  </button>
                 </div>
               </div>
 
-              {/* NID Front & Back Images */}
-              <div className="space-y-2">
-                <div className="text-xs font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
-                  <FileCheck2 className="w-4 h-4 text-orange-500" />
-                  <span>{isBangla ? 'জাতীয় পরিচয়পত্র (NID) যাচাইকরণ ছবি' : 'National ID (NID) Verification Photos'}</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800/50 space-y-2">
-                    <div className="font-bold text-zinc-700 dark:text-zinc-300">
-                      {isBangla ? 'NID সামনের অংশ (Front)' : 'NID Front Side'}
-                    </div>
-                    {inspectedTech.nidFrontImage?.trim() ? (
-                      <img
-                        src={inspectedTech.nidFrontImage.trim()}
-                        alt="NID Front"
-                        className="w-full h-40 object-cover rounded-xl border border-zinc-300 dark:border-zinc-700"
-                      />
-                    ) : (
-                      <div className="h-32 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400">
-                        {isBangla ? 'সামনের অংশ আপলোড করা হয়নি' : 'Front image not uploaded'}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="p-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800/50 space-y-2">
-                    <div className="font-bold text-zinc-700 dark:text-zinc-300">
-                      {isBangla ? 'NID পেছনের অংশ (Back)' : 'NID Back Side'}
-                    </div>
-                    {inspectedTech.nidBackImage?.trim() ? (
-                      <img
-                        src={inspectedTech.nidBackImage.trim()}
-                        alt="NID Back"
-                        className="w-full h-40 object-cover rounded-xl border border-zinc-300 dark:border-zinc-700"
-                      />
-                    ) : (
-                      <div className="h-32 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400">
-                        {isBangla ? 'পেছনের অংশ আপলোড করা হয়নি' : 'Back image not uploaded'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Admin Verification Toggles & 1-Click Pass */}
-              <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => verifyTechnicianField(inspectedTech.id, 'nidVerified', !inspectedTech.nidVerified)}
-                    className={`px-3 py-2 rounded-xl font-bold cursor-pointer border ${
-                      inspectedTech.nidVerified
-                        ? 'bg-emerald-600 text-white border-emerald-600'
-                        : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700'
-                    }`}
-                  >
-                    {inspectedTech.nidVerified
-                      ? isBangla
-                        ? '✓ NID ভেরিফায়েড'
-                        : '✓ NID Verified'
-                      : isBangla
-                      ? 'NID ভেরিফাই করুন'
-                      : 'Verify NID'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => verifyTechnicianField(inspectedTech.id, 'skillVerified', !inspectedTech.skillVerified)}
-                    className={`px-3 py-2 rounded-xl font-bold cursor-pointer border ${
-                      inspectedTech.skillVerified
-                        ? 'bg-emerald-600 text-white border-emerald-600'
-                        : 'bg-amber-500 text-white border-amber-500'
-                    }`}
-                  >
-                    {inspectedTech.skillVerified
-                      ? isBangla
-                        ? '✓ দক্ষতা উত্তীর্ণ'
-                        : '✓ Skill Passed'
-                      : isBangla
-                      ? 'দক্ষতা উত্তীর্ণ করুন'
-                      : 'Pass Skill Test'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => verifyTechnicianField(inspectedTech.id, 'platformVerified', !inspectedTech.platformVerified)}
-                    className={`px-3 py-2 rounded-xl font-bold cursor-pointer border ${
-                      inspectedTech.platformVerified
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700'
-                    }`}
-                  >
-                    {inspectedTech.platformVerified
-                      ? isBangla
-                        ? '✓ ভেরিফায়েড প্রো'
-                        : '✓ Verified Pro'
-                      : isBangla
-                      ? 'ভেরিফায়েড ব্যাজ দিন'
-                      : 'Grant Verified Badge'}
-                  </button>
-                </div>
-
+              <div className="shrink-0 flex justify-end px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900 text-xs">
                 <button
                   type="button"
-                  onClick={() => {
-                    verifyTechnicianField(inspectedTech.id, 'phoneVerified', true);
-                    verifyTechnicianField(inspectedTech.id, 'nidVerified', true);
-                    verifyTechnicianField(inspectedTech.id, 'skillVerified', true);
-                    verifyTechnicianField(inspectedTech.id, 'platformVerified', true);
-                    setDeleteToast(
-                      isBangla
-                        ? `${inspectedTech.name}-কে "দক্ষতা উত্তীর্ণ" ও সম্পূর্ণ অনুমোদন দেওয়া হয়েছে! এখন তিনি কাজ পিক করতে পারবেন।`
-                        : `${inspectedTech.name} has been marked "Skill Passed" and fully verified! They can now accept jobs.`
-                    );
-                    setTimeout(() => setDeleteToast(null), 4000);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black shadow-md cursor-pointer flex items-center gap-1.5"
+                  onClick={() => setInspectTechId(null)}
+                  className="px-5 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{isBangla ? '১-ক্লিকে সম্পূর্ণ অনুমোদন ও দক্ষতা উত্তীর্ণ' : 'Approve All & Pass Skill Test'}</span>
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>
               </div>
             </div>
@@ -1740,110 +2218,136 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Create / Edit Category Modal */}
       {catModalOpen && (
-        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <form onSubmit={handleSaveCategoryForm} className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 space-y-3 text-xs">
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
               <h4 className="text-sm font-black text-zinc-900 dark:text-white">
                 {editingCatId
                   ? isBangla ? 'ক্যাটাগরি আপডেট করুন' : 'Update Category'
                   : isBangla ? 'নতুন সার্ভিস ক্যাটাগরি যোগ করুন' : 'Add Service Category'}
               </h4>
-              <button type="button" onClick={() => setCatModalOpen(false)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">✕</button>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              <div>
-                <label className="font-bold block mb-1">{isBangla ? 'আইকন' : 'Icon'}</label>
-                <input
-                  type="text"
-                  value={catForm.icon}
-                  onChange={(e) => setCatForm({ ...catForm, icon: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-center text-base"
-                />
-              </div>
-              <div className="col-span-3">
-                <label className="font-bold block mb-1">{isBangla ? 'শুরুর মূল্য (৳)' : 'Starting Price (৳)'}</label>
-                <input
-                  type="number"
-                  required
-                  min={50}
-                  value={catForm.startingPrice}
-                  onChange={(e) => setCatForm({ ...catForm, startingPrice: Number(e.target.value) })}
-                  className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-bold"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="font-bold block mb-1">{isBangla ? 'নাম (বাংলা)' : 'Name (Bengali)'}</label>
-              <input
-                type="text"
-                required
-                value={catForm.nameBn}
-                onChange={(e) => setCatForm({ ...catForm, nameBn: e.target.value })}
-                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
-              />
-            </div>
-            <div>
-              <label className="font-bold block mb-1">{isBangla ? 'নাম (ইংরেজি)' : 'Name (English)'}</label>
-              <input
-                type="text"
-                required
-                value={catForm.nameEn}
-                onChange={(e) => setCatForm({ ...catForm, nameEn: e.target.value })}
-                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
-              />
-            </div>
-            <div>
-              <label className="font-bold block mb-1">{isBangla ? 'বিবরণ (বাংলা)' : 'Description (Bengali)'}</label>
-              <textarea
-                rows={2}
-                value={catForm.descriptionBn}
-                onChange={(e) => setCatForm({ ...catForm, descriptionBn: e.target.value })}
-                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
-              />
-            </div>
-            <div>
-              <label className="font-bold block mb-1">{isBangla ? 'বিবরণ (ইংরেজি)' : 'Description (English)'}</label>
-              <textarea
-                rows={2}
-                value={catForm.descriptionEn}
-                onChange={(e) => setCatForm({ ...catForm, descriptionEn: e.target.value })}
-                className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
-              />
-            </div>
-            <label className="flex items-center gap-2 font-semibold p-2 rounded-xl bg-stone-50 dark:bg-zinc-800 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={catForm.emergencyAvailable}
-                onChange={(e) => setCatForm({ ...catForm, emergencyAvailable: e.target.checked })}
-                className="accent-orange-600"
-              />
-              <span>{isBangla ? 'জরুরি সার্ভিস সাপোর্ট করে' : 'Supports Emergency Dispatch'}</span>
-            </label>
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setCatModalOpen(false)} className="px-4 py-2 rounded-xl border font-bold cursor-pointer">
-                {isBangla ? 'বাতিল' : 'Cancel'}
-              </button>
-              <button type="submit" className="px-5 py-2 rounded-xl bg-orange-600 text-white font-black cursor-pointer">
-                {isBangla ? 'সংরক্ষণ করুন' : 'Save Category'}
+              <button
+                type="button"
+                onClick={() => setCatModalOpen(false)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
-          </form>
+            <form onSubmit={handleSaveCategoryForm} className="flex-1 min-h-0 flex flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="font-bold block mb-1">{isBangla ? 'আইকন' : 'Icon'}</label>
+                    <input
+                      type="text"
+                      value={catForm.icon}
+                      onChange={(e) => setCatForm({ ...catForm, icon: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-center text-base"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="font-bold block mb-1">{isBangla ? 'শুরুর মূল্য (৳)' : 'Starting Price (৳)'}</label>
+                    <input
+                      type="number"
+                      required
+                      min={50}
+                      value={catForm.startingPrice}
+                      onChange={(e) => setCatForm({ ...catForm, startingPrice: Number(e.target.value) })}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-bold"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">{isBangla ? 'নাম (বাংলা)' : 'Name (Bengali)'}</label>
+                  <input
+                    type="text"
+                    required
+                    value={catForm.nameBn}
+                    onChange={(e) => setCatForm({ ...catForm, nameBn: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">{isBangla ? 'নাম (ইংরেজি)' : 'Name (English)'}</label>
+                  <input
+                    type="text"
+                    required
+                    value={catForm.nameEn}
+                    onChange={(e) => setCatForm({ ...catForm, nameEn: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">{isBangla ? 'বিবরণ (বাংলা)' : 'Description (Bengali)'}</label>
+                  <textarea
+                    rows={2}
+                    value={catForm.descriptionBn}
+                    onChange={(e) => setCatForm({ ...catForm, descriptionBn: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">{isBangla ? 'বিবরণ (ইংরেজি)' : 'Description (English)'}</label>
+                  <textarea
+                    rows={2}
+                    value={catForm.descriptionEn}
+                    onChange={(e) => setCatForm({ ...catForm, descriptionEn: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+                  />
+                </div>
+                <label className="flex items-center gap-2 font-semibold p-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={catForm.emergencyAvailable}
+                    onChange={(e) => setCatForm({ ...catForm, emergencyAvailable: e.target.checked })}
+                    className="accent-orange-600"
+                  />
+                  <span>{isBangla ? 'জরুরি সার্ভিস সাপোর্ট করে' : 'Supports Emergency Dispatch'}</span>
+                </label>
+              </div>
+              <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900">
+                <button type="button" onClick={() => setCatModalOpen(false)} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold cursor-pointer">
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
+                </button>
+                <button type="submit" className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black cursor-pointer">
+                  {isBangla ? 'সংরক্ষণ করুন' : 'Save Category'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
       {/* Generic Delete Confirmation Modal for Booking / Dispute / Warranty / Category */}
       {(bookingToDelete || reportToDelete || warrantyToDelete || catToDelete) && (
-        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="p-2.5 rounded-2xl bg-rose-500/15 border border-rose-500/30">
-                <Trash2 className="w-5 h-5" />
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2.5 text-rose-600">
+                <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/30">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <h3 className="font-black text-sm text-zinc-900 dark:text-white">
+                  {isBangla ? 'ডাটাবেজ থেকে স্থায়ীভাবে ডিলিট করুন' : 'Confirm Permanent Deletion'}
+                </h3>
               </div>
-              <h3 className="font-black text-sm text-zinc-900 dark:text-white">
-                {isBangla ? 'ডাটাবেজ থেকে স্থায়ীভাবে ডিলিট করুন' : 'Confirm Permanent Deletion'}
-              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setBookingToDelete(null);
+                  setReportToDelete(null);
+                  setWarrantyToDelete(null);
+                  setCatToDelete(null);
+                }}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            <p className="flex-1 overflow-y-auto p-4 sm:p-6 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
               {bookingToDelete && (isBangla
                 ? `আপনি কি নিশ্চিতভাবে বুকিং #${bookingToDelete.bookingNumber} ফায়ারবেস ডাটাবেজ থেকে মুছে ফেলতে চান?`
                 : `Are you sure you want to permanently delete Booking #${bookingToDelete.bookingNumber} from Firebase?`)}
@@ -1857,7 +2361,7 @@ export const AdminDashboard: React.FC = () => {
                 ? `আপনি কি নিশ্চিতভাবে ক্যাটাগরি "${catToDelete.nameBn}" ফায়ারবেস ডাটাবেজ থেকে মুছে ফেলতে চান?`
                 : `Are you sure you want to permanently delete Category "${catToDelete.nameEn}" from Firebase?`)}
             </p>
-            <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900 text-xs">
               <button
                 type="button"
                 onClick={() => {
@@ -1866,9 +2370,9 @@ export const AdminDashboard: React.FC = () => {
                   setWarrantyToDelete(null);
                   setCatToDelete(null);
                 }}
-                className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold cursor-pointer"
+                className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold cursor-pointer"
               >
-                {isBangla ? 'বাতিল' : 'Cancel'}
+                {isBangla ? 'বন্ধ করুন' : 'Close'}
               </button>
               <button
                 type="button"
@@ -1892,7 +2396,7 @@ export const AdminDashboard: React.FC = () => {
                   }
                   setTimeout(() => setDeleteToast(null), 3500);
                 }}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black cursor-pointer"
               >
                 {isBangla ? 'হ্যাঁ, ডিলিট করুন' : 'Confirm Delete'}
               </button>
@@ -1903,7 +2407,7 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Delete Toast Notification */}
       {deleteToast && (
-        <div className="fixed bottom-20 lg:bottom-6 right-3 sm:right-6 left-3 sm:left-auto z-[3000] px-4 py-3 rounded-2xl bg-zinc-900 text-white text-xs font-bold shadow-2xl border border-zinc-700 flex items-center gap-2 animate-in slide-in-from-bottom-3">
+        <div className="fixed bottom-20 lg:bottom-6 right-3 sm:right-6 left-3 sm:left-auto z-[10060] px-4 py-3 rounded-2xl bg-zinc-900 text-white text-xs font-bold shadow-2xl border border-zinc-700 flex items-center gap-2 animate-in slide-in-from-bottom-3">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{deleteToast}</span>
         </div>

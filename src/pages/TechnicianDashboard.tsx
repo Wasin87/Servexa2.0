@@ -36,7 +36,25 @@ import {
   Navigation,
   Route as RouteIcon,
   Lock,
-  FileCheck2
+  FileCheck2,
+  Mail,
+  Eye,
+  EyeOff,
+  X,
+  Ban,
+  Droplets,
+  Wind,
+  Snowflake,
+  RefreshCw,
+  Hammer,
+  Key,
+  Paintbrush,
+  Monitor,
+  BatteryCharging,
+  Wifi,
+  Tv,
+  Search,
+  Filter
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,6 +68,7 @@ import { ImageUploader } from '../components/common/ImageUploader';
 import { TechnicianRouteMap } from '../components/map/TechnicianRouteMap';
 import { BANGLADESH_DIVISIONS, BANGLADESH_DISTRICTS, getDistrictsByDivision, findDistrict } from '../data/bangladeshLocations';
 import { calculateTechnicianCompletion } from '../utils/profileCompletion';
+import { toBengaliNumber } from '../utils/geoUtils';
 import { AvailabilityStatus, Booking, Invoice, PortfolioItem, Technician, WarrantyClaim } from '../types';
 import { TechnicianPricingSection } from '../components/technician/TechnicianPricingSection';
 import { TechnicianWalletSection } from '../components/technician/TechnicianWalletSection';
@@ -60,6 +79,32 @@ import {
 } from '../services/firestoreFinanceService';
 import { saveNotificationToFirestore, updateUserInFirestore } from '../services/firestoreService';
 import type { AdditionalChargeRequest } from '../types/finance';
+
+const TECH_CATEGORY_ICON_MAP: Record<string, React.ElementType> = {
+  Zap,
+  Droplets,
+  Wind,
+  Snowflake,
+  RefreshCw,
+  ShieldCheck,
+  Hammer,
+  Key,
+  Paintbrush,
+  Sparkles,
+  Monitor,
+  BatteryCharging,
+  Wifi,
+  Tv,
+  Wrench,
+  Tool: Wrench,
+};
+
+const LEGACY_SKILL_ALIASES: Record<string, string[]> = {
+  appliance_repair: ['appliance'],
+  generator_service: ['generator'],
+  cctv_installation: ['cctv'],
+  home_cleaning: ['water_purifier'],
+};
 
 export const TechnicianDashboard: React.FC = () => {
   const {
@@ -79,7 +124,7 @@ export const TechnicianDashboard: React.FC = () => {
     deleteTechnicianPortfolio,
     getUnreadChatCount
   } = useApp();
-  const { currentUser, authTokenReady, updateProfile } = useAuth();
+  const { currentUser, authTokenReady, updateProfile, updateCredentials } = useAuth();
   const { t, isBangla } = useLanguage();
   const { showToast: showGlobalToast, triggerConfettiBurst } = useToast();
   const navigate = useNavigate();
@@ -175,7 +220,12 @@ export const TechnicianDashboard: React.FC = () => {
 
   // Profile Form State
   const [nameInput, setNameInput] = useState(currentTech?.name || currentUser?.name || '');
+  const [emailInput, setEmailInput] = useState(currentTech?.email || currentUser?.email || '');
   const [phoneInput, setPhoneInput] = useState(currentTech?.phone || currentUser?.phone || '');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showTechPassword, setShowTechPassword] = useState(false);
+  const [techProfileError, setTechProfileError] = useState<string | null>(null);
   const [avatarInput, setAvatarInput] = useState(currentTech?.avatar || currentUser?.avatar || '');
   const [divisionInput, setDivisionInput] = useState(currentTech?.division || '');
   const [districtInput, setDistrictInput] = useState(currentTech?.district || currentTech?.city || '');
@@ -200,7 +250,7 @@ export const TechnicianDashboard: React.FC = () => {
   const [showAddPortfolioModal, setShowAddPortfolioModal] = useState(false);
   const [portTitleBn, setPortTitleBn] = useState('');
   const [portTitleEn, setPortTitleEn] = useState('');
-  const [portCategory, setPortCategory] = useState('ac_repair');
+  const [portCategory, setPortCategory] = useState(categories[0]?.id || 'ac_repair');
   const [portBeforeImg, setPortBeforeImg] = useState('');
   const [portAfterImg, setPortAfterImg] = useState('');
   const [portDescBn, setPortDescBn] = useState('');
@@ -278,7 +328,11 @@ export const TechnicianDashboard: React.FC = () => {
           !!currentTech.email &&
           currentUser.email.toLowerCase() === currentTech.email.toLowerCase());
       setNameInput(currentTech.name || '');
+      setEmailInput(currentTech.email || (ownTech ? currentUser?.email || '' : ''));
       setPhoneInput(currentTech.phone || '');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      setTechProfileError(null);
       setAvatarInput(currentTech.avatar || (ownTech ? currentUser?.avatar || '' : ''));
       setDivisionInput(currentTech.division || '');
       setDistrictInput(currentTech.district || currentTech.city || '');
@@ -300,6 +354,7 @@ export const TechnicianDashboard: React.FC = () => {
     currentTech?.id,
     currentTech?.avatar,
     currentTech?.name,
+    currentTech?.email,
     currentTech?.phone,
     currentTech?.division,
     currentTech?.district,
@@ -308,6 +363,12 @@ export const TechnicianDashboard: React.FC = () => {
     currentTech?.nidFrontImage,
     currentTech?.nidBackImage,
   ]);
+
+  useEffect(() => {
+    if (categories.length > 0 && !categories.some((c) => c.id === portCategory)) {
+      setPortCategory(categories[0].id);
+    }
+  }, [categories, portCategory]);
 
   const districtsInDivision = getDistrictsByDivision(divisionInput || undefined);
   const activeDistrictObj = findDistrict(districtInput) || districtsInDivision[0] || BANGLADESH_DISTRICTS[0];
@@ -329,8 +390,39 @@ export const TechnicianDashboard: React.FC = () => {
   const activeTechWarranties = techWarranties.filter(w => ['ACCEPTED', 'ON_THE_WAY'].includes(w.status));
   const unreadWarrantyCount = pendingTechWarranties.length + activeTechWarranties.length;
 
-  // Customer feedback / reviews for this technician
+  // Customer feedback / reviews for this technician + Search & Rating filter
   const techReviews = currentTech ? reviews.filter(r => r.technicianId === currentTech.id) : [];
+  const [reviewSearchQuery, setReviewSearchQuery] = useState('');
+  const [reviewRatingFilter, setReviewRatingFilter] = useState<'ALL' | '5' | '4' | '3' | '2' | '1'>('ALL');
+  const [reviewSortBy, setReviewSortBy] = useState<'NEWEST' | 'HIGHEST' | 'LOWEST'>('NEWEST');
+
+  const reviewRatingCounts = {
+    '5': techReviews.filter(r => Math.round(Number(r.overallRating || 0)) === 5).length,
+    '4': techReviews.filter(r => Math.round(Number(r.overallRating || 0)) === 4).length,
+    '3': techReviews.filter(r => Math.round(Number(r.overallRating || 0)) === 3).length,
+    '2': techReviews.filter(r => Math.round(Number(r.overallRating || 0)) === 2).length,
+    '1': techReviews.filter(r => Math.round(Number(r.overallRating || 0)) === 1).length,
+  };
+
+  const normalizedReviewQuery = reviewSearchQuery.trim().toLowerCase();
+  const filteredTechReviews = techReviews
+    .filter((rev) => {
+      if (reviewRatingFilter !== 'ALL') {
+        if (Math.round(Number(rev.overallRating || 0)) !== Number(reviewRatingFilter)) {
+          return false;
+        }
+      }
+      if (normalizedReviewQuery) {
+        const hay = `${rev.customerName || ''} ${rev.serviceName || ''} ${rev.comment || ''} ${(rev.feedbackTags || []).join(' ')}`.toLowerCase();
+        if (!hay.includes(normalizedReviewQuery)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (reviewSortBy === 'HIGHEST') return Number(b.overallRating || 0) - Number(a.overallRating || 0);
+      if (reviewSortBy === 'LOWEST') return Number(a.overallRating || 0) - Number(b.overallRating || 0);
+      return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+    });
 
   // Total unread chat messages for active jobs
   const activeJobsUnreadCount = activeJobs.reduce((acc, job) => acc + getUnreadChatCount(job.id, 'TECHNICIAN'), 0);
@@ -403,6 +495,15 @@ export const TechnicianDashboard: React.FC = () => {
   };
 
   const handleWarrantyAction = (claim: WarrantyClaim, nextStatus: WarrantyClaim['status']) => {
+    if (currentTech?.isBlocked) {
+      showToast(
+        isBangla
+          ? 'আপনার অ্যাকাউন্ট অ্যাডমিন কর্তৃক ব্লক করা হয়েছে। কাজ সম্পন্ন করতে অ্যাডমিনের সাথে যোগাযোগ করুন।'
+          : 'Your account is blocked by Admin. Contact support to restore access.',
+        'error'
+      );
+      return;
+    }
     if (!isSkillApproved) {
       showToast(
         isBangla
@@ -454,6 +555,15 @@ export const TechnicianDashboard: React.FC = () => {
   };
 
   const handleStatusAdvance = (bookingId: string, currentStatus: string) => {
+    if (currentTech?.isBlocked) {
+      showToast(
+        isBangla
+          ? 'আপনার অ্যাকাউন্ট অ্যাডমিন কর্তৃক ব্লক করা হয়েছে। অনুগ্রহ করে অ্যাডমিনের সাথে যোগাযোগ করুন।'
+          : 'Your account is blocked by Admin. Please contact support.',
+        'error'
+      );
+      return;
+    }
     if (!isSkillApproved) {
       showToast(
         isBangla
@@ -689,14 +799,67 @@ export const TechnicianDashboard: React.FC = () => {
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentTech) return;
+    setTechProfileError(null);
+
+    const cleanEmail = emailInput.trim();
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      const msg = isBangla ? 'সঠিক ইমেইল ঠিকানা লিখুন।' : 'Please enter a valid email address.';
+      setTechProfileError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
+    const trimmedNewPass = newPasswordInput.trim();
+    const trimmedConfirmPass = confirmPasswordInput.trim();
+    if (trimmedNewPass || trimmedConfirmPass) {
+      if (trimmedNewPass.length < 6) {
+        const msg = isBangla ? 'নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।' : 'New password must be at least 6 characters.';
+        setTechProfileError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+      if (trimmedNewPass !== trimmedConfirmPass) {
+        const msg = isBangla ? 'নতুন পাসওয়ার্ড ও নিশ্চিত পাসওয়ার্ড মেলেনি।' : 'New password and confirm password do not match.';
+        setTechProfileError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+    }
+
     setSavingTechProfile(true);
     const distObj = findDistrict(districtInput);
     const ownProfile = isOwnTechProfile(currentTech);
+    const credentialPayload = {
+      name: nameInput.trim(),
+      email: cleanEmail || currentTech.email || '',
+      phone: phoneInput.trim(),
+      ...(trimmedNewPass ? { password: trimmedNewPass } : {}),
+      avatar: avatarInput.trim(),
+      division: divisionInput,
+      district: districtInput,
+      city: districtInput,
+      area: areaInput
+    };
+
+    if (ownProfile) {
+      const credRes = await updateCredentials(credentialPayload);
+      if (!credRes.success) {
+        setSavingTechProfile(false);
+        const msg = credRes.error || (isBangla ? 'অ্যাকাউন্ট তথ্য আপডেট করা যায়নি।' : 'Could not update credentials.');
+        setTechProfileError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+    } else if (currentTech.userId) {
+      await updateUserInFirestore(currentTech.userId, credentialPayload);
+    }
+
     const updatedProfile = {
       ...(ownProfile && currentUser && currentTech.userId !== currentUser.id
         ? { userId: currentUser.id }
         : {}),
       name: nameInput.trim(),
+      email: cleanEmail || currentTech.email || '',
       phone: phoneInput.trim(),
       avatar: avatarInput.trim(),
       division: divisionInput,
@@ -713,30 +876,7 @@ export const TechnicianDashboard: React.FC = () => {
       nidFrontImage: nidFrontInput.trim(),
       nidBackImage: nidBackInput.trim()
     };
-    // Update technician record in AppContext + Firestore
     const savedTech = await updateTechnicianProfile(currentTech.id, updatedProfile);
-    // Update auth user in AuthContext/Firestore if this technician belongs to currentUser
-    if (ownProfile) {
-      await updateProfile({
-        name: nameInput.trim(),
-        phone: phoneInput.trim(),
-        avatar: avatarInput.trim(),
-        division: divisionInput,
-        district: districtInput,
-        city: districtInput,
-        area: areaInput
-      });
-    } else if (currentTech.userId) {
-      await updateUserInFirestore(currentTech.userId, {
-        name: nameInput.trim(),
-        phone: phoneInput.trim(),
-        avatar: avatarInput.trim(),
-        division: divisionInput,
-        district: districtInput,
-        city: districtInput,
-        area: areaInput
-      });
-    }
     setSavingTechProfile(false);
 
     if (!savedTech) {
@@ -749,20 +889,31 @@ export const TechnicianDashboard: React.FC = () => {
       return;
     }
 
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+
     const nextComp = calculateTechnicianCompletion({ ...currentTech, ...updatedProfile });
     if (nextComp.isComplete) {
       triggerConfettiBurst();
       showToast(
         isBangla
-          ? 'অভিনন্দন! আপনার বায়োডাটা ১০০% সম্পূর্ণ হয়েছে — অ্যাডমিন যাচাই করে "দক্ষতা উত্তীর্ণ" অনুমোদন দেবেন।'
+          ? trimmedNewPass
+            ? 'প্রোফাইল, লগইন তথ্য ও পাসওয়ার্ড সফলভাবে আপডেট হয়েছে (১০০% সম্পূর্ণ)!'
+            : 'অভিনন্দন! আপনার বায়োডাটা ১০০% সম্পূর্ণ হয়েছে — অ্যাডমিন যাচাই করে "দক্ষতা উত্তীর্ণ" অনুমোদন দেবেন।'
+          : trimmedNewPass
+          ? 'Profile, login credentials & password updated (100% complete)!'
           : 'Congratulations! Your biodata is 100% complete — Admin will verify and approve your Skill Test.'
       );
     } else {
       showToast(
         isBangla
-          ? `প্রোফাইল সংরক্ষিত হয়েছে (${nextComp.percent}% সম্পূর্ণ)`
+          ? trimmedNewPass
+            ? `প্রোফাইল ও নতুন পাসওয়ার্ড সংরক্ষিত হয়েছে (${toBengaliNumber(nextComp.percent)}% সম্পূর্ণ)`
+            : `প্রোফাইল সংরক্ষিত হয়েছে (${toBengaliNumber(nextComp.percent)}% সম্পূর্ণ)`
+          : trimmedNewPass
+          ? `Profile & new password saved (${nextComp.percent}% complete)`
           : `Profile saved (${nextComp.percent}% complete)`,
-        'info'
+        'success'
       );
     }
   };
@@ -800,10 +951,38 @@ export const TechnicianDashboard: React.FC = () => {
     }
   };
 
-  const toggleSkill = (skillId: string) => {
-    setSelectedSkills(prev =>
-      prev.includes(skillId) ? prev.filter(s => s !== skillId) : [...prev, skillId]
+  const isCategorySelected = (catId: string, nameEn: string, nameBn: string) => {
+    const aliases = LEGACY_SKILL_ALIASES[catId] || [];
+    return selectedSkills.some(
+      (s) =>
+        s === catId ||
+        aliases.includes(s) ||
+        s.toLowerCase() === nameEn.toLowerCase() ||
+        s === nameBn
     );
+  };
+
+  const toggleSkill = (skillId: string, nameEn = '', nameBn = '') => {
+    const aliases = LEGACY_SKILL_ALIASES[skillId] || [];
+    setSelectedSkills((prev) => {
+      const exists = prev.some(
+        (s) =>
+          s === skillId ||
+          aliases.includes(s) ||
+          (nameEn && s.toLowerCase() === nameEn.toLowerCase()) ||
+          (nameBn && s === nameBn)
+      );
+      if (exists) {
+        return prev.filter(
+          (s) =>
+            s !== skillId &&
+            !aliases.includes(s) &&
+            (!nameEn || s.toLowerCase() !== nameEn.toLowerCase()) &&
+            (!nameBn || s !== nameBn)
+        );
+      }
+      return [...prev, skillId];
+    });
   };
 
   // 3. ADD PORTFOLIO HANDLER
@@ -1051,6 +1230,28 @@ export const TechnicianDashboard: React.FC = () => {
 
   const techBanners = (
     <div className="space-y-3 sm:space-y-4">
+      {currentTech?.isBlocked && (
+        <div className="p-4 sm:p-5 rounded-2xl border border-rose-500/50 bg-rose-50 dark:bg-rose-950/30 flex items-start gap-3">
+          <div className="p-2 rounded-xl bg-rose-600 text-white shrink-0">
+            <Ban className="w-5 h-5" />
+          </div>
+          <div className="space-y-1 text-xs">
+            <h2 className="text-sm font-black text-rose-700 dark:text-rose-300">
+              {isBangla ? 'আপনার অ্যাকাউন্ট অ্যাডমিন কর্তৃক ব্লক করা হয়েছে' : 'Account Blocked by Admin'}
+            </h2>
+            <p className="text-rose-600 dark:text-rose-200 leading-relaxed">
+              {isBangla
+                ? 'বর্তমানে আপনার প্রোফাইল পাবলিক তালিকা থেকে লুকানো রয়েছে এবং আপনি নতুন কাজ গ্রহণ করতে পারবেন না।'
+                : 'Your profile is currently hidden from customer discovery and job actions are suspended.'}
+            </p>
+            {currentTech.blockedReason && (
+              <div className="font-bold text-rose-700 dark:text-rose-300">
+                {isBangla ? 'কারণ:' : 'Reason:'} {currentTech.blockedReason}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {(!isSkillApproved || !completion.isComplete || searchParams.get('onboarding') === '1') && (
         <div
           className={`p-3.5 sm:p-5 rounded-2xl border space-y-2.5 sm:space-y-3 ${
@@ -1252,6 +1453,15 @@ export const TechnicianDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
+                  if (currentTech.isBlocked) {
+                    showToast(
+                      isBangla
+                        ? 'আপনার অ্যাকাউন্ট অ্যাডমিন কর্তৃক ব্লক করা হয়েছে।'
+                        : 'Your account is blocked by Admin.',
+                      'error'
+                    );
+                    return;
+                  }
                   if (!isSkillApproved) {
                     showToast(
                       isBangla
@@ -1264,7 +1474,7 @@ export const TechnicianDashboard: React.FC = () => {
                   showToast(isBangla ? 'আপনার স্ট্যাটাস এখন প্রস্তুত (Ready)' : 'Your status is now Ready');
                 }}
                 className={`px-3 py-1.5 rounded-lg font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  !isSkillApproved
+                  !isSkillApproved || currentTech.isBlocked
                     ? 'opacity-50 cursor-not-allowed text-zinc-500'
                     : currentTech.availability === 'available'
                     ? 'bg-emerald-600 text-white'
@@ -1276,6 +1486,15 @@ export const TechnicianDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
+                  if (currentTech.isBlocked) {
+                    showToast(
+                      isBangla
+                        ? 'আপনার অ্যাকাউন্ট অ্যাডমিন কর্তৃক ব্লক করা হয়েছে।'
+                        : 'Your account is blocked by Admin.',
+                      'error'
+                    );
+                    return;
+                  }
                   if (!isSkillApproved) {
                     showToast(
                       isBangla
@@ -1288,7 +1507,7 @@ export const TechnicianDashboard: React.FC = () => {
                   showToast(isBangla ? 'আপনার স্ট্যাটাস এখন কাজে ব্যস্ত (Busy)' : 'Your status is now Busy');
                 }}
                 className={`px-3 py-1.5 rounded-lg font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  !isSkillApproved
+                  !isSkillApproved || currentTech.isBlocked
                     ? 'opacity-50 cursor-not-allowed text-zinc-500'
                     : currentTech.availability === 'busy'
                     ? 'bg-amber-500 text-white'
@@ -2061,63 +2280,184 @@ export const TechnicianDashboard: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-              {techReviews.map((rev) => (
-                <div key={rev.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      {rev.customerAvatar?.trim() ? (
-                        <img src={rev.customerAvatar.trim()} alt={rev.customerName} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full object-cover border border-orange-500/30 shrink-0" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
-                          {(rev.customerName || 'C').charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div>
-                        <div className="font-black text-xs text-zinc-900 dark:text-white">{rev.customerName}</div>
-                        <div className="text-[11px] text-zinc-400">{rev.serviceName} · {rev.createdAt}</div>
-                      </div>
-                    </div>
-                    <div className="px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 font-black text-xs flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 fill-current" />
-                      <span>{rev.overallRating}</span>
-                    </div>
+            <div className="space-y-4">
+              {/* Search by Customer Name & Filter by Star Rating */}
+              <div className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
+                <div className="flex flex-col md:flex-row gap-2.5">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={reviewSearchQuery}
+                      onChange={(e) => setReviewSearchQuery(e.target.value)}
+                      placeholder={
+                        isBangla
+                          ? 'গ্রাহকের নাম, সার্ভিস বা মন্তব্য লিখে খুঁজুন...'
+                          : 'Search by customer name, service or comment...'
+                      }
+                      className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                    />
+                    {reviewSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setReviewSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer"
+                        aria-label="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
 
-                  <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-stone-50 dark:bg-zinc-800/70 p-3 rounded-2xl italic border border-zinc-200 dark:border-zinc-700/60">
-                    "{rev.comment}"
-                  </p>
-
-                  {rev.feedbackTags && rev.feedbackTags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {rev.feedbackTags.map((tag, idx) => (
-                        <span key={idx} className="px-2 py-0.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[10px] font-bold">
-                          ✓ {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-4 gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-center text-[10px] text-zinc-500">
-                    <div>
-                      {isBangla ? 'মান:' : 'Quality:'}{' '}
-                      <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.workQuality}★</span>
-                    </div>
-                    <div>
-                      {isBangla ? 'আচরণ:' : 'Behavior:'}{' '}
-                      <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.behavior}★</span>
-                    </div>
-                    <div>
-                      {isBangla ? 'সময়:' : 'Time:'}{' '}
-                      <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.punctuality}★</span>
-                    </div>
-                    <div>
-                      {isBangla ? 'মূল্য:' : 'Price:'}{' '}
-                      <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.priceFairness}★</span>
-                    </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Filter className="w-3.5 h-3.5 text-zinc-400 hidden sm:block" />
+                    <select
+                      value={reviewSortBy}
+                      onChange={(e) => setReviewSortBy(e.target.value as 'NEWEST' | 'HIGHEST' | 'LOWEST')}
+                      className="px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                    >
+                      <option value="NEWEST">{isBangla ? 'সর্বশেষ আগে' : 'Newest First'}</option>
+                      <option value="HIGHEST">{isBangla ? 'সর্বোচ্চ রেটিং আগে' : 'Highest Rating'}</option>
+                      <option value="LOWEST">{isBangla ? 'সর্বনিম্ন রেটিং আগে' : 'Lowest Rating'}</option>
+                    </select>
                   </div>
                 </div>
-              ))}
+
+                {/* Star Rating Filter Buttons */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setReviewRatingFilter('ALL')}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
+                        reviewRatingFilter === 'ALL'
+                          ? 'bg-orange-600 text-white border-orange-600 shadow-xs'
+                          : 'bg-stone-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-orange-400'
+                      }`}
+                    >
+                      {isBangla ? `সকল (${toBengaliNumber(techReviews.length)})` : `All (${techReviews.length})`}
+                    </button>
+                    {(['5', '4', '3', '2', '1'] as const).map((starKey) => (
+                      <button
+                        key={starKey}
+                        type="button"
+                        onClick={() => setReviewRatingFilter(starKey)}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border flex items-center gap-1 transition-colors cursor-pointer ${
+                          reviewRatingFilter === starKey
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                            : 'bg-stone-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-amber-400'
+                        }`}
+                      >
+                        <Star className={`w-3 h-3 ${reviewRatingFilter === starKey ? 'fill-white text-white' : 'fill-amber-400 text-amber-400'}`} />
+                        <span>
+                          {isBangla
+                            ? `${toBengaliNumber(starKey)} স্টার (${toBengaliNumber(reviewRatingCounts[starKey])})`
+                            : `${starKey}★ (${reviewRatingCounts[starKey]})`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {(reviewSearchQuery || reviewRatingFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReviewSearchQuery('');
+                        setReviewRatingFilter('ALL');
+                        setReviewSortBy('NEWEST');
+                      }}
+                      className="text-[11px] font-bold text-orange-600 dark:text-orange-400 hover:underline cursor-pointer"
+                    >
+                      {isBangla ? 'ফিল্টার রিসেট করুন' : 'Reset Filters'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {filteredTechReviews.length === 0 ? (
+                <div className="p-7 text-center bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 space-y-2.5">
+                  <Search className="w-8 h-8 text-zinc-400 mx-auto" />
+                  <h4 className="font-bold text-sm text-zinc-900 dark:text-white">
+                    {isBangla ? 'এই ফিল্টার বা সার্চের সাথে কোনো রিভিউ মেলেনি' : 'No reviews match your search or rating filter'}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewSearchQuery('');
+                      setReviewRatingFilter('ALL');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    {isBangla ? 'সব রিভিউ দেখুন' : 'Show All Reviews'}
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                  {filteredTechReviews.map((rev) => (
+                    <div key={rev.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {rev.customerAvatar?.trim() ? (
+                            <img src={rev.customerAvatar.trim()} alt={rev.customerName} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full object-cover border border-orange-500/30 shrink-0" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-orange-600 text-white font-black flex items-center justify-center border border-orange-500/30 shrink-0">
+                              {(rev.customerName || 'C').charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-black text-xs text-zinc-900 dark:text-white truncate">{rev.customerName}</span>
+                              {rev.isEdited && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-blue-400 text-[10px] font-bold">
+                                  {isBangla ? 'সম্পাদিত' : 'Edited'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-zinc-400 truncate">{rev.serviceName} · {rev.createdAt}</div>
+                          </div>
+                        </div>
+                        <div className="px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 font-black text-xs flex items-center gap-1 shrink-0">
+                          <Star className="w-3.5 h-3.5 fill-current" />
+                          <span>{rev.overallRating}</span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-stone-50 dark:bg-zinc-800/70 p-3 rounded-2xl italic border border-zinc-200 dark:border-zinc-700/60">
+                        "{rev.comment}"
+                      </p>
+
+                      {rev.feedbackTags && rev.feedbackTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {rev.feedbackTags.map((tag, idx) => (
+                            <span key={idx} className="px-2 py-0.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[10px] font-bold">
+                              ✓ {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-4 gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-center text-[10px] text-zinc-500">
+                        <div>
+                          {isBangla ? 'মান:' : 'Quality:'}{' '}
+                          <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.workQuality}★</span>
+                        </div>
+                        <div>
+                          {isBangla ? 'আচরণ:' : 'Behavior:'}{' '}
+                          <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.behavior}★</span>
+                        </div>
+                        <div>
+                          {isBangla ? 'সময়:' : 'Time:'}{' '}
+                          <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.punctuality}★</span>
+                        </div>
+                        <div>
+                          {isBangla ? 'মূল্য:' : 'Price:'}{' '}
+                          <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.priceFairness}★</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2159,7 +2499,7 @@ export const TechnicianDashboard: React.FC = () => {
               shape="square"
             />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
                   {isBangla ? 'পূর্ণ নাম:' : 'Full Name:'}
@@ -2175,6 +2515,22 @@ export const TechnicianDashboard: React.FC = () => {
 
               <div>
                 <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                  {isBangla ? 'লগইন ইমেইল:' : 'Login Email:'}
+                </label>
+                <div className="relative">
+                  <Mail className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="tech@example.com"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
                   {isBangla ? 'মোবাইল নম্বর:' : 'Phone Number:'}
                 </label>
                 <input
@@ -2185,6 +2541,57 @@ export const TechnicianDashboard: React.FC = () => {
                   className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold"
                 />
               </div>
+            </div>
+
+            {/* Login Password Update Card */}
+            <div className="p-4 rounded-2xl bg-stone-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-black text-zinc-800 dark:text-zinc-200">
+                  <Lock className="w-3.5 h-3.5 text-orange-500" />
+                  <span>{isBangla ? 'লগইন পাসওয়ার্ড পরিবর্তন (ঐচ্ছিক)' : 'Change Login Password (Optional)'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTechPassword((prev) => !prev)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-orange-600 cursor-pointer"
+                >
+                  {showTechPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showTechPassword ? (isBangla ? 'লুকান' : 'Hide') : (isBangla ? 'দেখুন' : 'Show')}</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                    {isBangla ? 'নতুন পাসওয়ার্ড:' : 'New Password:'}
+                  </label>
+                  <input
+                    type={showTechPassword ? 'text' : 'password'}
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder={isBangla ? 'কমপক্ষে ৬ অক্ষর' : 'Minimum 6 characters'}
+                    autoComplete="new-password"
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                    {isBangla ? 'নতুন পাসওয়ার্ড নিশ্চিত করুন:' : 'Confirm New Password:'}
+                  </label>
+                  <input
+                    type={showTechPassword ? 'text' : 'password'}
+                    value={confirmPasswordInput}
+                    onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                    placeholder={isBangla ? 'পুনরায় নতুন পাসওয়ার্ড লিখুন' : 'Re-enter new password'}
+                    autoComplete="new-password"
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-semibold"
+                  />
+                </div>
+              </div>
+              {techProfileError && (
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 font-bold text-[11px]">
+                  ⚠️ {techProfileError}
+                </div>
+              )}
             </div>
 
             {/* All-Bangladesh Division / District / Area Cascading Selectors */}
@@ -2467,40 +2874,37 @@ export const TechnicianDashboard: React.FC = () => {
             </div>
 
             <div>
-              <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-2">
-                {isBangla ? 'আপনি যে যে কাজের সেবা প্রদান করেন (দক্ষতা নির্বাচন):' : 'Select Service Skills You Provide:'}
-              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <label className="font-bold text-zinc-700 dark:text-zinc-300">
+                  {isBangla ? 'আপনি যে যে কাজের সেবা প্রদান করেন (অ্যাডমিন ক্যাটাগরি অনুযায়ী):' : 'Select Service Categories You Provide (Synced with Admin):'}
+                </label>
+                <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
+                  {isBangla ? `${toBengaliNumber(selectedSkills.length)}টি নির্বাচিত` : `${selectedSkills.length} selected`}
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
-                {[
-                  { id: 'ac_repair', labelBn: 'এসি মেরামত ও সার্ভিস', labelEn: 'AC Repair & Servicing', icon: '❄️' },
-                  { id: 'plumbing', labelBn: 'প্লাম্বিং ও পাইপ লিকেজ', labelEn: 'Plumbing & Pipe Leak', icon: '🔧' },
-                  { id: 'electrical', labelBn: 'ইলেকট্রিক্যাল ও শর্ট সার্কিট', labelEn: 'Electrical & Wiring', icon: '⚡' },
-                  { id: 'appliance', labelBn: 'ফ্রিজ ও ওয়াশিং মেশিন', labelEn: 'Fridge & Washing Machine', icon: '🧺' },
-                  { id: 'generator', labelBn: 'জেনারেটর ও মোটর', labelEn: 'Generator & Motor', icon: '⚙️' },
-                  { id: 'cctv', labelBn: 'সিসিটিভি ও সিকিউরিটি লক', labelEn: 'CCTV & Security Lock', icon: '📹' },
-                  { id: 'carpentry', labelBn: 'কাঠমিস্ত্রি ও ফার্নিচার', labelEn: 'Carpentry & Furniture', icon: '🪚' },
-                  { id: 'painting', labelBn: 'রংমিস্ত্রি ও দেয়াল ডেকোরেশন', labelEn: 'Painting & Wall Decor', icon: '🎨' },
-                  { id: 'water_purifier', labelBn: 'ওয়াটার ফিল্টার ও আরও', labelEn: 'Water Purifier & RO', icon: '🚰' }
-                ].map((skill) => {
-                  const isChecked = selectedSkills.includes(skill.id);
+                {categories.map((cat) => {
+                  const isChecked = isCategorySelected(cat.id, cat.nameEn, cat.nameBn);
+                  const IconComp = TECH_CATEGORY_ICON_MAP[cat.icon];
                   return (
                     <label
-                      key={skill.id}
-                      onClick={() => toggleSkill(skill.id)}
+                      key={cat.id}
                       className={`flex items-center gap-2.5 p-3 rounded-xl border transition-all cursor-pointer select-none ${
                         isChecked
                           ? 'border-orange-500 bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold ring-1 ring-orange-500/30'
-                          : 'border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                          : 'border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-orange-400/60'
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => {}}
-                        className="accent-orange-600 cursor-pointer"
+                        onChange={() => toggleSkill(cat.id, cat.nameEn, cat.nameBn)}
+                        className="accent-orange-600 cursor-pointer shrink-0"
                       />
-                      <span>{skill.icon}</span>
-                      <span className="truncate">{isBangla ? skill.labelBn : skill.labelEn}</span>
+                      <span className="shrink-0 flex items-center justify-center w-5 h-5 text-sm">
+                        {IconComp ? <IconComp className="w-4 h-4 text-orange-500" /> : (cat.icon || '🔧')}
+                      </span>
+                      <span className="truncate">{isBangla ? cat.nameBn : cat.nameEn}</span>
                     </label>
                   );
                 })}
@@ -2618,96 +3022,111 @@ export const TechnicianDashboard: React.FC = () => {
 
       {/* ADD PORTFOLIO MODAL */}
       {showAddPortfolioModal && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between border-b pb-3 border-zinc-100 dark:border-zinc-800">
-              <h3 className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-1.5">
-                <Camera className="w-4 h-4 text-orange-500" />
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-xl max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+              <h3 className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-2">
+                <Camera className="w-4 h-4 text-orange-500 shrink-0" />
                 <span>{isBangla ? 'কাজের নতুন ছবি পোর্টফোলিওতে যোগ করুন' : 'Add Work Portfolio Photo'}</span>
               </h3>
-              <button onClick={() => setShowAddPortfolioModal(false)} className="text-zinc-400 hover:text-zinc-600">✕</button>
+              <button
+                type="button"
+                onClick={() => setShowAddPortfolioModal(false)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <form onSubmit={handleAddPortfolioSubmit} className="space-y-3.5 text-xs">
-              <div>
-                <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                  {isBangla ? 'কাজের শিরোনাম:' : 'Work Title:'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={portTitleBn}
-                  onChange={(e) => setPortTitleBn(e.target.value)}
-                  placeholder={
-                    isBangla
-                      ? 'যেমন: মিরপুর ২ টনের ইনভার্টার এসি জেট ওয়াশ সার্ভিসিং'
-                      : 'e.g., Mirpur 2-Ton Inverter AC Jet Wash Servicing'
-                  }
-                  className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <form onSubmit={handleAddPortfolioSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
                 <div>
                   <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    {isBangla ? 'ক্যাটাগরি:' : 'Category:'}
-                  </label>
-                  <select
-                    value={portCategory}
-                    onChange={(e) => setPortCategory(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold"
-                  >
-                    <option value="ac_repair">{isBangla ? 'এসি সার্ভিসিং' : 'AC Servicing'}</option>
-                    <option value="plumbing">{isBangla ? 'প্লাম্বিং ও পাইপ' : 'Plumbing & Pipe'}</option>
-                    <option value="electrical">{isBangla ? 'ইলেকট্রিক্যাল' : 'Electrical'}</option>
-                    <option value="appliance">{isBangla ? 'হোম অ্যাপ্লায়েন্স' : 'Home Appliance'}</option>
-                    <option value="generator">{isBangla ? 'জেনারেটর' : 'Generator'}</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    {isBangla ? 'কাজের বিবরণ:' : 'Work Description:'}
+                    {isBangla ? 'কাজের শিরোনাম:' : 'Work Title:'}
                   </label>
                   <input
                     type="text"
-                    value={portDescBn}
-                    onChange={(e) => setPortDescBn(e.target.value)}
+                    required
+                    value={portTitleBn}
+                    onChange={(e) => setPortTitleBn(e.target.value)}
                     placeholder={
                       isBangla
-                        ? 'ধুলো জমে থাকা কয়েল সম্পূর্ণ পরিষ্কার ও গ্যাস লেভেল চেক...'
-                        : 'Full coil jet cleaning and refrigerant pressure check...'
+                        ? 'যেমন: মিরপুর ২ টনের ইনভার্টার এসি জেট ওয়াশ সার্ভিসিং'
+                        : 'e.g., Mirpur 2-Ton Inverter AC Jet Wash Servicing'
                     }
-                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-medium"
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold"
                   />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                      {isBangla ? 'ক্যাটাগরি:' : 'Category:'}
+                    </label>
+                    <select
+                      value={portCategory}
+                      onChange={(e) => setPortCategory(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold"
+                    >
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
+                          {isBangla ? cat.nameBn : cat.nameEn}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                      {isBangla ? 'কাজের বিবরণ:' : 'Work Description:'}
+                    </label>
+                    <input
+                      type="text"
+                      value={portDescBn}
+                      onChange={(e) => setPortDescBn(e.target.value)}
+                      placeholder={
+                        isBangla
+                          ? 'ধুলো জমে থাকা কয়েল সম্পূর্ণ পরিষ্কার ও গ্যাস লেভেল চেক...'
+                          : 'Full coil jet cleaning and refrigerant pressure check...'
+                      }
+                      className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="min-w-0">
+                    <ImageUploader
+                      currentImage={portBeforeImg}
+                      onImageChange={setPortBeforeImg}
+                      onRemove={() => setPortBeforeImg('')}
+                      label={isBangla ? 'কাজের পূর্বের ছবি (Before Photo):' : 'Before Work Photo:'}
+                      shape="banner"
+                      showPresets={false}
+                      compact
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <ImageUploader
+                      currentImage={portAfterImg}
+                      onImageChange={setPortAfterImg}
+                      onRemove={() => setPortAfterImg('')}
+                      label={isBangla ? 'কাজের পরের ছবি (After Photo):' : 'After Work Photo:'}
+                      shape="banner"
+                      showPresets={false}
+                      compact
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <ImageUploader
-                  currentImage={portBeforeImg}
-                  onImageChange={setPortBeforeImg}
-                  onRemove={() => setPortBeforeImg('')}
-                  label={isBangla ? 'কাজের পূর্বের ছবি (Before Photo):' : 'Before Work Photo:'}
-                  shape="banner"
-                  showPresets={false}
-                />
-                <ImageUploader
-                  currentImage={portAfterImg}
-                  onImageChange={setPortAfterImg}
-                  onRemove={() => setPortAfterImg('')}
-                  label={isBangla ? 'কাজের পরের ছবি (After Photo):' : 'After Work Photo:'}
-                  shape="banner"
-                  showPresets={false}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="shrink-0 flex items-center justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900">
                 <button
                   type="button"
                   onClick={() => setShowAddPortfolioModal(false)}
-                  className="px-4 py-2 rounded-xl border border-zinc-300 text-zinc-700 font-bold"
+                  className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
                 >
-                  {isBangla ? 'বাতিল' : 'Cancel'}
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>
                 <button
                   type="submit"
@@ -2723,76 +3142,85 @@ export const TechnicianDashboard: React.FC = () => {
 
       {/* Invoice Generator Modal */}
       {invoiceModalBooking && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between border-b pb-3 border-zinc-100 dark:border-zinc-800">
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-1.5">
                 <FilePlus className="w-4 h-4 text-orange-500" />
                 <span>{isBangla ? 'অফিসিয়াল ইনভয়েস ও বিল তৈরি করুন' : 'Generate Final Invoice'}</span>
               </h3>
-              <button onClick={() => setInvoiceModalBooking(null)} className="text-zinc-400 hover:text-zinc-600">✕</button>
+              <button
+                type="button"
+                onClick={() => setInvoiceModalBooking(null)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="text-xs text-zinc-600 dark:text-zinc-400">
-              {isBangla ? 'বুকিং:' : 'Booking:'}{' '}
-              <span className="font-bold text-orange-600 font-mono">#{invoiceModalBooking.bookingNumber}</span> ·{' '}
-              {isBangla ? 'গ্রাহক:' : 'Customer:'} <span className="font-bold">{invoiceModalBooking.customerName}</span>
-            </div>
-
-            <form onSubmit={handleInvoiceSubmit} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    {isBangla ? 'ভিজিটিং ফি (ফিক্সড):' : 'Visiting Fee (Fixed):'}
-                  </label>
-                  <input type="number" disabled value={invoiceModalBooking.estimatedVisitingFee || 200} className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 font-bold" />
+            <form onSubmit={handleInvoiceSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+                <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                  {isBangla ? 'বুকিং:' : 'Booking:'}{' '}
+                  <span className="font-bold text-orange-600 font-mono">#{invoiceModalBooking.bookingNumber}</span> ·{' '}
+                  {isBangla ? 'গ্রাহক:' : 'Customer:'} <span className="font-bold">{invoiceModalBooking.customerName}</span>
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                      {isBangla ? 'ভিজিটিং ফি (ফিক্সড):' : 'Visiting Fee (Fixed):'}
+                    </label>
+                    <input type="number" disabled value={invoiceModalBooking.estimatedVisitingFee || 200} className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 font-bold" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                      {isBangla ? 'লেবার / সার্ভিস চার্জ (৳):' : 'Labour / Service Charge (৳):'}
+                    </label>
+                    <input type="number" required value={labourCostInput} onChange={(e) => setLabourCostInput(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                      {isBangla ? 'যন্ত্রাংশ খরচ (যদি থাকে):' : 'Spare Parts Cost (Optional):'}
+                    </label>
+                    <input type="number" value={partsCostInput} onChange={(e) => setPartsCostInput(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold" />
+                  </div>
+                  <div>
+                    <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                      {isBangla ? 'ছাড় / ডিসকাউন্ট (৳):' : 'Discount (৳):'}
+                    </label>
+                    <input type="number" value={discountInput} onChange={(e) => setDiscountInput(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold" />
+                  </div>
+                </div>
+
                 <div>
                   <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    {isBangla ? 'লেবার / সার্ভিস চার্জ (৳):' : 'Labour / Service Charge (৳):'}
+                    {isBangla ? 'পেমেন্ট মেথড:' : 'Payment Method:'}
                   </label>
-                  <input type="number" required value={labourCostInput} onChange={(e) => setLabourCostInput(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold" />
+                  <select value={paymentMethodInput} onChange={(e) => setPaymentMethodInput(e.target.value as any)} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold">
+                    <option value="cash" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'নগদ ক্যাশ (Cash)' : 'Cash on Completion'}</option>
+                    <option value="bkash" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'বিকাশ (bKash)' : 'bKash'}</option>
+                    <option value="nagad" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'নগদ (Nagad)' : 'Nagad'}</option>
+                  </select>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+                  <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                    {isBangla ? 'সর্বমোট বিল:' : 'Total Invoice Amount:'}
+                  </span>
+                  <span className="font-black text-base text-emerald-600 dark:text-emerald-400">
+                    ৳{(invoiceModalBooking.estimatedVisitingFee || 200) + labourCostInput + partsCostInput - discountInput}
+                  </span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    {isBangla ? 'যন্ত্রাংশ খরচ (যদি থাকে):' : 'Spare Parts Cost (Optional):'}
-                  </label>
-                  <input type="number" value={partsCostInput} onChange={(e) => setPartsCostInput(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold" />
-                </div>
-                <div>
-                  <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                    {isBangla ? 'ছাড় / ডিসকাউন্ট (৳):' : 'Discount (৳):'}
-                  </label>
-                  <input type="number" value={discountInput} onChange={(e) => setDiscountInput(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold" />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
-                  {isBangla ? 'পেমেন্ট মেথড:' : 'Payment Method:'}
-                </label>
-                <select value={paymentMethodInput} onChange={(e) => setPaymentMethodInput(e.target.value as any)} className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold">
-                  <option value="cash" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'নগদ ক্যাশ (Cash)' : 'Cash on Completion'}</option>
-                  <option value="bkash" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'বিকাশ (bKash)' : 'bKash'}</option>
-                  <option value="nagad" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{isBangla ? 'নগদ (Nagad)' : 'Nagad'}</option>
-                </select>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
-                <span className="font-bold text-zinc-700 dark:text-zinc-300">
-                  {isBangla ? 'সর্বমোট বিল:' : 'Total Invoice Amount:'}
-                </span>
-                <span className="font-black text-base text-emerald-600 dark:text-emerald-400">
-                  ৳{(invoiceModalBooking.estimatedVisitingFee || 200) + labourCostInput + partsCostInput - discountInput}
-                </span>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setInvoiceModalBooking(null)} className="px-4 py-2 rounded-xl border font-bold">
-                  {isBangla ? 'বাতিল' : 'Cancel'}
+              <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900">
+                <button type="button" onClick={() => setInvoiceModalBooking(null)} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold cursor-pointer">
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>
                 <button type="submit" className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md cursor-pointer">
                   {isBangla ? 'ইনভয়েস ইস্যু ও কাজ শেষ করুন' : 'Issue Invoice & Complete Job'}
@@ -2805,77 +3233,86 @@ export const TechnicianDashboard: React.FC = () => {
 
       {/* Extra Work / Material Cost Request Modal */}
       {extraChargeBooking && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b pb-3 border-zinc-100 dark:border-zinc-800">
+        <div className="fixed inset-0 z-[10050] bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="font-black text-sm text-zinc-900 dark:text-white">
                 {isBangla ? 'অতিরিক্ত কাজ / মালামাল চার্জ অনুরোধ' : 'Request Extra / Material Charge'}
               </h3>
-              <button type="button" onClick={() => setExtraChargeBooking(null)} className="text-zinc-400">✕</button>
+              <button
+                type="button"
+                onClick={() => setExtraChargeBooking(null)}
+                aria-label={isBangla ? 'বন্ধ করুন' : 'Close'}
+                className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-rose-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <p className="text-[11px] text-zinc-500">
-              {isBangla
-                ? 'কাস্টমার অনুমোদন (Approve) না করলে এই অতিরিক্ত চার্জ বিলের সাথে যুক্ত হবে না।'
-                : 'This additional charge will only be added to the final bill once approved by the customer.'}
-            </p>
-            <form onSubmit={handleSubmitExtraCharge} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold block mb-1">{isBangla ? 'চার্জের ধরন:' : 'Charge Type:'}</label>
-                <select
-                  value={extraChargeType}
-                  onChange={(e) => setExtraChargeType(e.target.value as AdditionalChargeRequest['chargeType'])}
-                  className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-bold"
-                >
-                  <option value="EXTRA_WORK">
-                    {isBangla ? 'অতিরিক্ত কাজ (কমিশনযোগ্য)' : 'Extra Work (Commissionable)'}
-                  </option>
-                  <option value="PARTS_MATERIAL">
-                    {isBangla ? 'খুচরা যন্ত্রাংশ / মালামাল (কমিশনমুক্ত)' : 'Spare Parts / Material (Non-Commissionable Pass-through)'}
-                  </option>
-                  <option value="EMERGENCY">
-                    {isBangla ? 'জরুরি কল সারচার্জ' : 'Emergency Call Surcharge'}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label className="font-bold block mb-1">{isBangla ? 'পরিমাণ (৳):' : 'Amount (৳):'}</label>
-                <input
-                  type="number"
-                  required
-                  min={10}
-                  value={extraChargeAmount}
-                  onChange={(e) => setExtraChargeAmount(Number(e.target.value))}
-                  className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-black"
-                />
-              </div>
-              <div>
-                <label className="font-bold block mb-1">{isBangla ? 'স্পষ্ট কারণ / বিবরণ:' : 'Clear Reason / Description:'}</label>
-                <input
-                  type="text"
-                  required
-                  placeholder={isBangla ? 'যেমন: নতুন ক্যাপাসিটর বা অতিরিক্ত ক্যাবল লাগবে' : 'e.g., New capacitor or extra wiring cable needed'}
-                  value={extraChargeReason}
-                  onChange={(e) => setExtraChargeReason(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700"
-                />
-              </div>
-              <div>
-                <label className="font-bold block mb-1">
+            <form onSubmit={handleSubmitExtraCharge} className="flex-1 min-h-0 flex flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+                <p className="text-[11px] text-zinc-500">
                   {isBangla
-                    ? 'রশিদ / দোকান নোট (ঐচ্ছিক, ৳৫০০+ মালামালের জন্য আবশ্যক):'
-                    : 'Receipt / Store Note (Optional, required for ৳500+ materials):'}
-                </label>
-                <input
-                  type="text"
-                  placeholder={isBangla ? 'রশিদ বা দোকানের নাম/মেমো' : 'Receipt / Supplier memo'}
-                  value={extraChargeReceipt}
-                  onChange={(e) => setExtraChargeReceipt(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700"
-                />
+                    ? 'কাস্টমার অনুমোদন (Approve) না করলে এই অতিরিক্ত চার্জ বিলের সাথে যুক্ত হবে না।'
+                    : 'This additional charge will only be added to the final bill once approved by the customer.'}
+                </p>
+                <div>
+                  <label className="font-bold block mb-1">{isBangla ? 'চার্জের ধরন:' : 'Charge Type:'}</label>
+                  <select
+                    value={extraChargeType}
+                    onChange={(e) => setExtraChargeType(e.target.value as AdditionalChargeRequest['chargeType'])}
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-bold"
+                  >
+                    <option value="EXTRA_WORK" className="bg-white dark:bg-zinc-900">
+                      {isBangla ? 'অতিরিক্ত কাজ (কমিশনযোগ্য)' : 'Extra Work (Commissionable)'}
+                    </option>
+                    <option value="PARTS_MATERIAL" className="bg-white dark:bg-zinc-900">
+                      {isBangla ? 'খুচরা যন্ত্রাংশ / মালামাল (কমিশনমুক্ত)' : 'Spare Parts / Material (Non-Commissionable Pass-through)'}
+                    </option>
+                    <option value="EMERGENCY" className="bg-white dark:bg-zinc-900">
+                      {isBangla ? 'জরুরি কল সারচার্জ' : 'Emergency Call Surcharge'}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">{isBangla ? 'পরিমাণ (৳):' : 'Amount (৳):'}</label>
+                  <input
+                    type="number"
+                    required
+                    min={10}
+                    value={extraChargeAmount}
+                    onChange={(e) => setExtraChargeAmount(Number(e.target.value))}
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 font-black"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">{isBangla ? 'স্পষ্ট কারণ / বিবরণ:' : 'Clear Reason / Description:'}</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={isBangla ? 'যেমন: নতুন ক্যাপাসিটর বা অতিরিক্ত ক্যাবল লাগবে' : 'e.g., New capacitor or extra wiring cable needed'}
+                    value={extraChargeReason}
+                    onChange={(e) => setExtraChargeReason(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">
+                    {isBangla
+                      ? 'রশিদ / দোকান নোট (ঐচ্ছিক, ৳৫০০+ মালামালের জন্য আবশ্যক):'
+                      : 'Receipt / Store Note (Optional, required for ৳500+ materials):'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={isBangla ? 'রশিদ বা দোকানের নাম/মেমো' : 'Receipt / Supplier memo'}
+                    value={extraChargeReceipt}
+                    onChange={(e) => setExtraChargeReceipt(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700"
+                  />
+                </div>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setExtraChargeBooking(null)} className="px-4 py-2 rounded-xl border font-bold">
-                  {isBangla ? 'বাতিল' : 'Cancel'}
+              <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-stone-50/80 dark:bg-zinc-900">
+                <button type="button" onClick={() => setExtraChargeBooking(null)} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 font-bold cursor-pointer">
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>
                 <button type="submit" disabled={extraChargeSubmitting} className="px-5 py-2 rounded-xl bg-orange-600 text-white font-black cursor-pointer">
                   {extraChargeSubmitting
@@ -2912,8 +3349,8 @@ export const TechnicianDashboard: React.FC = () => {
 
       {/* Fullscreen Technician Route Navigation Modal */}
       {fullscreenRouteBooking && (
-        <div className="fixed inset-0 z-[3200] bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
-          <div className="w-full max-w-5xl max-h-[95vh] overflow-y-auto rounded-3xl shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[10050] bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+          <div className="w-full max-w-5xl max-h-[88vh] overflow-y-auto rounded-3xl shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <TechnicianRouteMap
               booking={fullscreenRouteBooking}
               technician={currentTech}

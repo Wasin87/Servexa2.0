@@ -16,7 +16,8 @@ import {
   Receipt,
   Check,
   X,
-  Lock
+  Lock,
+  Edit3
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -932,14 +933,29 @@ export const BookingDetailPage: React.FC = () => {
 
             {bookingReview && (
               <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-zinc-900 dark:text-white flex items-center gap-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-black text-zinc-900 dark:text-white flex items-center gap-1.5 flex-wrap">
                     <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                     <span>{isBangla ? 'আপনার প্রদত্ত ফিডব্যাক' : 'Your Submitted Feedback'}</span>
+                    {bookingReview.isEdited && (
+                      <span className="px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-blue-400 text-[10px] font-bold">
+                        {isBangla ? 'সম্পাদিত' : 'Edited'}
+                      </span>
+                    )}
                   </span>
-                  <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-white font-black text-[11px]">
-                    {bookingReview.overallRating}★
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-white font-black text-[11px]">
+                      {bookingReview.overallRating}★
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setReviewModalOpen(true)}
+                      className="px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-800 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>{isBangla ? 'এডিট' : 'Edit'}</span>
+                    </button>
+                  </div>
                 </div>
                 <p className="text-zinc-700 dark:text-zinc-300 italic">"{bookingReview.comment}"</p>
                 {bookingReview.feedbackTags && bookingReview.feedbackTags.length > 0 && (
@@ -1110,6 +1126,7 @@ export const BookingDetailPage: React.FC = () => {
       {reviewModalOpen && (
         <ReviewModal
           booking={booking}
+          existingReview={bookingReview}
           isOpen={reviewModalOpen}
           onClose={() => setReviewModalOpen(false)}
         />

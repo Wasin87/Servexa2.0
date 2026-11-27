@@ -35,6 +35,9 @@ export interface User {
   address?: string;
   nidVerified?: boolean;
   phoneVerified?: boolean;
+  isBlocked?: boolean;
+  blockedReason?: string;
+  blockedAt?: string;
   createdAt: string;
 }
 
@@ -114,6 +117,9 @@ export interface Technician {
   longitude?: number;
   emergencyAvailable?: boolean;
   serviceRadiusKm?: number;
+  isBlocked?: boolean;
+  blockedReason?: string;
+  blockedAt?: string;
 }
 
 export interface StatusHistoryItem {
@@ -220,6 +226,8 @@ export interface Review {
   feedbackTags?: string[];
   serviceName: string;
   createdAt: string;
+  updatedAt?: string;
+  isEdited?: boolean;
 }
 
 export interface ChatMessage {

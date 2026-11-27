@@ -197,13 +197,25 @@ export const ProfessionalDetailPage: React.FC = () => {
               </div>
             </div>
 
+            {technician.isBlocked && (
+              <div className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-500/40 text-rose-600 dark:text-rose-300 text-xs font-bold">
+                🚫 {isBangla ? 'এই টেকনিশিয়ান সাময়িকভাবে ব্লককৃত (বুকিং বন্ধ)' : 'Technician Temporarily Suspended'}
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
-              <Link
-                to={`/book?techId=${technician.id}`}
-                className="flex-1 lg:flex-initial px-5 py-3 text-center text-xs font-bold rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-md transition-all hover:scale-102"
-              >
-                {t.actions.bookNow}
-              </Link>
+              {technician.isBlocked ? (
+                <span className="flex-1 lg:flex-initial px-5 py-3 text-center text-xs font-bold rounded-xl bg-zinc-200 dark:bg-zinc-800 text-zinc-500 cursor-not-allowed select-none">
+                  {isBangla ? 'বুকিং সাময়িকভাবে বন্ধ' : 'Booking Unavailable'}
+                </span>
+              ) : (
+                <Link
+                  to={`/book?techId=${technician.id}`}
+                  className="flex-1 lg:flex-initial px-5 py-3 text-center text-xs font-bold rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-md transition-all hover:scale-102"
+                >
+                  {t.actions.bookNow}
+                </Link>
+              )}
               {/* Call CTA Button */}
               <a
                 href={`tel:${(technician.phone || '+8801700000000').replace(/\s+/g, '')}`}
@@ -440,9 +452,16 @@ export const ProfessionalDetailPage: React.FC = () => {
                       "{rev.comment}"
                     </p>
 
-                    <div className="text-[10px] text-zinc-400 flex items-center justify-between">
+                    <div className="text-[10px] text-zinc-400 flex items-center justify-between gap-2">
                       <span>{rev.serviceName}</span>
-                      <span>{rev.createdAt}</span>
+                      <span className="flex items-center gap-1.5">
+                        {rev.isEdited && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400 font-bold">
+                            {isBangla ? 'সম্পাদিত' : 'Edited'}
+                          </span>
+                        )}
+                        <span>{rev.createdAt}</span>
+                      </span>
                     </div>
                   </div>
                 ))}

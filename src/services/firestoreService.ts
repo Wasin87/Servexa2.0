@@ -397,7 +397,7 @@ export function subscribeToFirestoreReviews(onUpdate: (reviews: Review[]) => voi
 
 export async function saveReviewToFirestore(review: Review): Promise<void> {
   try {
-    await setDoc(doc(db, 'reviews', review.id), stripUndefined(review));
+    await setDoc(doc(db, 'reviews', review.id), stripUndefined(review), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `reviews/${review.id}`);
   }

@@ -16,6 +16,7 @@ interface ImageUploaderProps {
   shape?: 'circle' | 'square' | 'banner';
   className?: string;
   showPresets?: boolean;
+  compact?: boolean;
 }
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
@@ -25,7 +26,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   label,
   shape = 'square',
   className = '',
-  showPresets = false
+  showPresets = false,
+  compact = false
 }) => {
   const { isBangla } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,9 +131,9 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   ];
 
   return (
-    <div className={`space-y-2 ${className}`}>
+    <div className={`space-y-1.5 min-w-0 ${className}`}>
       {label && (
-        <label className="font-bold text-zinc-700 dark:text-zinc-300 block text-xs">
+        <label className="font-bold text-zinc-700 dark:text-zinc-300 block text-xs leading-snug">
           {label}
         </label>
       )}
@@ -149,37 +151,41 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`p-3.5 sm:p-4 rounded-2xl border-2 transition-all ${
+        className={`${compact ? 'p-3 flex flex-col items-center gap-2.5' : 'p-3.5 sm:p-4 flex flex-col sm:flex-row items-center gap-4'} rounded-2xl border-2 transition-all overflow-hidden ${
           isDragging
             ? 'border-orange-500 bg-orange-50/70 dark:bg-orange-950/40 ring-4 ring-orange-500/20'
             : 'border-zinc-200 dark:border-zinc-700 bg-stone-50/80 dark:bg-zinc-800/80 hover:border-orange-500/50'
-        } flex flex-col sm:flex-row items-center sm:items-center gap-4`}
+        }`}
       >
         {/* Preview Thumbnail */}
         <div
           onClick={() => fileInputRef.current?.click()}
-          className="relative group cursor-pointer shrink-0"
+          className={`relative group cursor-pointer shrink-0 ${compact && shape === 'banner' ? 'w-full' : ''}`}
           title={isBangla ? 'ছবি পরিবর্তন করতে ক্লিক করুন' : 'Click to change photo'}
         >
           {preview ? (
             <img
               src={preview}
               alt="Upload Preview"
-              className={`object-cover border-2 border-orange-500 shadow-md transition-transform group-hover:scale-105 ${
+              className={`object-cover border-2 border-orange-500 shadow-md transition-transform group-hover:scale-[1.02] ${
                 shape === 'circle'
                   ? 'w-20 h-20 rounded-full'
                   : shape === 'banner'
-                  ? 'w-32 h-20 rounded-xl'
+                  ? compact
+                    ? 'w-full h-24 sm:h-28 rounded-xl'
+                    : 'w-32 h-20 rounded-xl'
                   : 'w-20 h-20 rounded-2xl'
               }`}
             />
           ) : (
             <div
-              className={`bg-stone-200 dark:bg-zinc-700 border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex items-center justify-center text-zinc-500 dark:text-zinc-300 transition-transform group-hover:scale-105 ${
+              className={`bg-stone-200 dark:bg-zinc-700 border-2 border-dashed border-zinc-300 dark:border-zinc-600 flex items-center justify-center text-zinc-500 dark:text-zinc-300 transition-transform group-hover:scale-[1.02] ${
                 shape === 'circle'
                   ? 'w-20 h-20 rounded-full'
                   : shape === 'banner'
-                  ? 'w-32 h-20 rounded-xl'
+                  ? compact
+                    ? 'w-full h-24 sm:h-28 rounded-xl'
+                    : 'w-32 h-20 rounded-xl'
                   : 'w-20 h-20 rounded-2xl'
               }`}
             >
@@ -187,39 +193,53 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             </div>
           )}
           <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white ${
-            shape === 'circle' ? 'rounded-full' : 'rounded-2xl'
+            shape === 'circle' ? 'rounded-full' : 'rounded-xl'
           }`}>
             <Camera className="w-5 h-5" />
           </div>
-          <span className="absolute -bottom-1 -right-1 p-1 rounded-full bg-orange-600 text-white shadow-xs">
+          <span className="absolute bottom-1.5 right-1.5 p-1 rounded-full bg-orange-600 text-white shadow-xs">
             <Upload className="w-3 h-3" />
           </span>
         </div>
 
         {/* Action Controls & Description */}
-        <div className="flex-1 min-w-0 text-center sm:text-left space-y-2 w-full">
-          <div>
-            <div className="text-xs font-bold text-zinc-900 dark:text-white flex items-center justify-center sm:justify-start gap-1.5">
-              <span>{isBangla ? 'ডিভাইস থেকে সরাসরি ছবি আপলোড করুন' : 'Direct Photo Upload from Device'}</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-600 font-bold">
-                JPG, PNG, WebP
-              </span>
+        <div className={`flex-1 min-w-0 w-full ${compact ? 'text-center space-y-2' : 'text-center sm:text-left space-y-2'}`}>
+          {!compact ? (
+            <div>
+              <div className="text-xs font-bold text-zinc-900 dark:text-white flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
+                <span>{isBangla ? 'ডিভাইস থেকে সরাসরি ছবি আপলোড করুন' : 'Direct Photo Upload from Device'}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-600 font-bold">
+                  JPG, PNG, WebP
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-500 mt-0.5">
+                {isBangla
+                  ? 'কম্পিউটার বা মোবাইল থেকে যেকোনো স্পষ্ট ছবি সিলেক্ট করুন বা ড্র্যাগ অ্যান্ড ড্রপ করুন।'
+                  : 'Click choose file to upload directly from phone or desktop camera/gallery.'}
+              </p>
             </div>
-            <p className="text-[11px] text-zinc-500 mt-0.5">
-              {isBangla
-                ? 'কম্পিউটার বা মোবাইল থেকে যেকোনো স্পষ্ট ছবি সিলেক্ট করুন বা ড্র্যাগ অ্যান্ড ড্রপ করুন।'
-                : 'Click choose file to upload directly from phone or desktop camera/gallery.'}
+          ) : (
+            <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+              {isBangla ? 'JPG, PNG বা WebP ছবি আপলোড করুন' : 'Upload JPG, PNG or WebP image'}
             </p>
-          </div>
+          )}
 
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+          <div className={`flex flex-wrap items-center ${compact ? 'justify-center' : 'justify-center sm:justify-start'} gap-2`}>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
+              className={`${compact ? 'px-3 py-1.5 text-[11px]' : 'px-3.5 py-2 text-xs'} rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95`}
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>{isBangla ? 'ডিভাইস থেকে ছবি বেছে নিন' : 'Choose Photo File'}</span>
+              <Upload className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {compact
+                  ? isBangla
+                    ? preview ? 'ছবি বদলান' : 'ছবি বেছে নিন'
+                    : preview ? 'Change Photo' : 'Choose Photo'
+                  : isBangla
+                  ? 'ডিভাইস থেকে ছবি বেছে নিন'
+                  : 'Choose Photo File'}
+              </span>
             </button>
 
             {onRemove && preview && (
@@ -230,7 +250,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                   setUploadError(null);
                   onRemove();
                 }}
-                className="px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 font-bold text-xs cursor-pointer"
+                className={`${compact ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'} rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 font-bold cursor-pointer`}
               >
                 {isBangla ? 'মুছে ফেলুন' : 'Remove'}
               </button>

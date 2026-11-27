@@ -72,7 +72,7 @@ export const CATEGORY_BANNERS: Record<string, string> = {
 const DEFAULT_BANNER = serviceAcElectricalBanner;
 
 export const ServicesPage: React.FC = () => {
-  const { categories } = useApp();
+  const { categories, technicians } = useApp();
   const { t, isBangla } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'popular' | 'emergency'>('all');
@@ -218,8 +218,18 @@ export const ServicesPage: React.FC = () => {
       ) : (
         <div className="grid grid-cols-3 md:grid-cols-4 gap-2 sm:gap-5">
           {paginatedCategories.map((cat) => {
-            const Icon = iconMap[cat.icon] || Wrench;
+            const Icon = iconMap[cat.icon];
             const bannerUrl = CATEGORY_BANNERS[cat.id] || DEFAULT_BANNER;
+            const liveProCount = technicians.filter(
+              (tech) =>
+                !tech.isBlocked &&
+                (tech.skills || []).some(
+                  (s) =>
+                    s === cat.id ||
+                    s.toLowerCase() === (cat.nameEn || '').toLowerCase() ||
+                    s === cat.nameBn
+                )
+            ).length;
 
             return (
               <div
@@ -239,7 +249,13 @@ export const ServicesPage: React.FC = () => {
 
                   {/* Floating Category Icon Badge */}
                   <div className="absolute bottom-2 left-2 sm:bottom-3 sm:left-3 w-7 h-7 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md text-orange-600 dark:text-orange-400 flex items-center justify-center shadow-lg border border-orange-500/30 group-hover:bg-orange-600 group-hover:text-white transition-colors">
-                    <Icon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                    {Icon ? (
+                      <Icon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                    ) : cat.icon && !/^[A-Za-z0-9_]+$/.test(cat.icon) ? (
+                      <span className="text-sm sm:text-lg leading-none">{cat.icon}</span>
+                    ) : (
+                      <Wrench className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                    )}
                   </div>
 
                   {/* Emergency / Popular Badges */}
@@ -281,8 +297,8 @@ export const ServicesPage: React.FC = () => {
                       <span className="font-extrabold text-orange-600 dark:text-orange-400 text-xs sm:text-sm">
                         ৳{toBengaliNumber(cat.startingPrice)}
                       </span>
-                      <span className="text-[9px] sm:text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
-                        {toBengaliNumber(cat.activeProfessionals || 50)} {isBangla ? 'মিস্ত্রি' : 'pros'}
+                      <span className="text-[9px] sm:text-[10px] text-zinc-400 dark:text-zinc-500 font-medium tabular-nums">
+                        {toBengaliNumber(liveProCount)} {isBangla ? 'মিস্ত্রি' : 'pros'}
                       </span>
                     </div>
 

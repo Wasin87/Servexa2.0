@@ -61,6 +61,7 @@ import {
   saveChatMessageToFirestore,
   markChatMessageReadInFirestore,
   deleteChatMessageFromFirestore,
+  updateUserInFirestore,
 } from '../services/firestoreService';
 
 interface AppContextType {
@@ -85,6 +86,10 @@ interface AppContextType {
   deleteBooking: (bookingId: string) => void;
   generateInvoice: (bookingId: string, invoiceData: Partial<Invoice>) => void;
   submitReview: (reviewInput: Omit<Review, 'id' | 'createdAt'>) => void;
+  updateReview: (
+    reviewId: string,
+    updates: Partial<Omit<Review, 'id' | 'bookingId' | 'customerId' | 'technicianId'>>
+  ) => Promise<void>;
   toggleFavorite: (technicianId: string) => void;
   isFavorite: (technicianId: string) => boolean;
   addToCompare: (technicianId: string) => boolean;
@@ -121,6 +126,8 @@ interface AppContextType {
   registerNewTechnician: (user: User, preferredTechId?: string | null) => Technician;
   updateTechnicianProfile: (technicianId: string, profileData: Partial<Technician>) => Promise<boolean>;
   deleteTechnician: (technicianId: string) => void;
+  toggleBlockTechnician: (technicianId: string, blocked: boolean, reason?: string) => Promise<void>;
+  adminReportTechnician: (technician: Technician, reason: string, description: string) => Promise<void>;
   addTechnicianPortfolio: (technicianId: string, item: Omit<PortfolioItem, 'id'>) => void;
   deleteTechnicianPortfolio: (technicianId: string, itemId: string) => void;
 }
@@ -851,6 +858,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setNotifications((prev) => [reviewNotif, ...prev]);
       void saveNotificationToFirestore(reviewNotif);
+    }
+  };
+
+  const updateReview = async (
+    reviewId: string,
+    updates: Partial<Omit<Review, 'id' | 'bookingId' | 'customerId' | 'technicianId'>>
+  ) => {
+    const existing = reviewsRef.current.find((r) => r.id === reviewId);
+    if (!existing) return;
+
+    const updatedAt = new Date().toISOString();
+    const updatedReview: Review = {
+      ...existing,
+      ...updates,
+      isEdited: true,
+      updatedAt,
+    };
+
+    const nextReviews = reviewsRef.current.map((r) =>
+      r.id === reviewId ? updatedReview : r
+    );
+    reviewsRef.current = nextReviews;
+    setReviews(nextReviews);
+
+    await saveReviewToFirestore(updatedReview);
+
+    // Recalculate technician rating accurately and sync to Firestore & server
+    const techReviews = nextReviews.filter((r) => r.technicianId === existing.technicianId);
+    setTechnicians((prev) =>
+      prev.map((t) => {
+        if (t.id !== existing.technicianId) return t;
+        let newRating = t.rating;
+        if (techReviews.length > 0 && t.reviewCount <= techReviews.length) {
+          const sum = techReviews.reduce((acc, r) => acc + Number(r.overallRating || 0), 0);
+          newRating = Number((sum / techReviews.length).toFixed(1));
+        } else {
+          const count = Math.max(1, t.reviewCount);
+          const adjusted =
+            t.rating * count - Number(existing.overallRating || 0) + Number(updatedReview.overallRating || 0);
+          newRating = Number(Math.max(1, Math.min(5, adjusted / count)).toFixed(1));
+        }
+        const updatedTech: Technician = {
+          ...t,
+          rating: newRating,
+          reviewCount: Math.max(t.reviewCount, techReviews.length),
+          healthScore: {
+            ...t.healthScore,
+            reviewScore: newRating,
+          },
+        };
+        void saveTechnicianToFirestore(updatedTech);
+        void syncTechnicianToServer(updatedTech).catch(() => {});
+        return updatedTech;
+      })
+    );
+
+    if (existing.technicianId) {
+      const editNotif: NotificationItem = {
+        id: `notif-rev-edit-${Date.now()}`,
+        userId: existing.technicianId,
+        role: 'TECHNICIAN',
+        titleEn: `Customer Updated Feedback (${updatedReview.overallRating}★)`,
+        titleBn: `✏️ গ্রাহক তার ফিডব্যাক আপডেট করেছেন (${updatedReview.overallRating}★)`,
+        messageEn: `${updatedReview.customerName} updated their review for ${updatedReview.serviceName}: "${(updatedReview.comment || '').slice(0, 60)}"`,
+        messageBn: `${updatedReview.customerName} "${updatedReview.serviceName}" কাজের ফিডব্যাক আপডেট করেছেন।`,
+        type: 'system',
+        link: '/technician/dashboard?tab=reviews',
+        isRead: false,
+        createdAt: updatedAt,
+      };
+      setNotifications((prev) => [editNotif, ...prev]);
+      void saveNotificationToFirestore(editNotif);
     }
   };
 
@@ -1604,6 +1683,105 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void deleteTechnicianFromFirestore(technicianId);
   };
 
+  const toggleBlockTechnician = async (
+    technicianId: string,
+    blocked: boolean,
+    reason?: string
+  ) => {
+    const target = techniciansRef.current.find((t) => t.id === technicianId);
+    const cleanReason = (reason || '').trim();
+    const blockedAt = blocked ? new Date().toISOString() : '';
+
+    const patch: Partial<Technician> = blocked
+      ? {
+          isBlocked: true,
+          blockedReason: cleanReason || 'প্ল্যাটফর্ম নীতিমালা লঙ্ঘন / প্রশাসনিক সিদ্ধান্ত',
+          blockedAt,
+          availability: 'offline',
+        }
+      : {
+          isBlocked: false,
+          blockedReason: '',
+          blockedAt: '',
+        };
+
+    await updateTechnicianProfile(technicianId, patch);
+
+    if (target?.userId) {
+      await updateUserInFirestore(target.userId, {
+        isBlocked: blocked,
+        blockedReason: blocked ? patch.blockedReason : '',
+        blockedAt,
+      });
+    }
+
+    if (target) {
+      const notif: NotificationItem = {
+        id: `notif-block-${Date.now()}`,
+        userId: target.id,
+        role: 'TECHNICIAN',
+        titleEn: blocked ? 'Account Suspended by Admin' : 'Account Restored by Admin',
+        titleBn: blocked
+          ? '🚫 আপনার টেকনিশিয়ান অ্যাকাউন্ট সাময়িকভাবে ব্লক করা হয়েছে'
+          : '✅ আপনার টেকনিশিয়ান অ্যাকাউন্ট আনব্লক করা হয়েছে',
+        messageEn: blocked
+          ? `Your account was blocked by Admin. Reason: ${patch.blockedReason}`
+          : 'Admin has unblocked your account. You can resume accepting jobs.',
+        messageBn: blocked
+          ? `অ্যাডমিন আপনার অ্যাকাউন্ট ব্লক করেছেন। কারণ: ${patch.blockedReason}`
+          : 'অ্যাডমিন আপনার অ্যাকাউন্টটি পুনরায় সক্রিয় (আনব্লক) করেছেন।',
+        type: 'system',
+        link: '/technician/dashboard',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      };
+      setNotifications((prev) => [notif, ...prev]);
+      void saveNotificationToFirestore(notif);
+    }
+  };
+
+  const adminReportTechnician = async (
+    technician: Technician,
+    reason: string,
+    description: string
+  ) => {
+    const nowIso = new Date().toISOString();
+    const newReport: ReportItem = {
+      id: `rep-adm-${Date.now()}`,
+      bookingId: 'ADMIN-TECH-REVIEW',
+      bookingNumber: 'ADMIN-WARNING',
+      reporterId: currentUser?.id || 'admin-wasin',
+      reporterName: currentUser?.name || 'Platform Admin',
+      reporterRole: 'ADMIN',
+      targetId: technician.id,
+      targetName: technician.name,
+      targetRole: 'TECHNICIAN',
+      reason: reason.trim() || 'নীতিমালা সতর্কীকরণ / Policy Violation',
+      description: description.trim() || reason.trim(),
+      status: 'OPEN',
+      createdAt: nowIso,
+    };
+
+    setReports((prev) => [newReport, ...prev]);
+    await saveReportToFirestore(newReport);
+
+    const techNotif: NotificationItem = {
+      id: `notif-adm-rep-${Date.now()}`,
+      userId: technician.id,
+      role: 'TECHNICIAN',
+      titleEn: `Official Report / Warning Issued`,
+      titleBn: `⚠️ অ্যাডমিনের পক্ষ থেকে অফিশিয়াল রিপোর্ট / সতর্কবার্তা`,
+      messageEn: `${newReport.reason}: ${newReport.description}`,
+      messageBn: `${newReport.reason} — ${newReport.description}`,
+      type: 'system',
+      link: '/technician/dashboard',
+      isRead: false,
+      createdAt: nowIso,
+    };
+    setNotifications((prev) => [techNotif, ...prev]);
+    void saveNotificationToFirestore(techNotif);
+  };
+
   const addTechnicianPortfolio = (technicianId: string, item: Omit<PortfolioItem, 'id'>) => {
     const newItem: PortfolioItem = {
       ...item,
@@ -1655,6 +1833,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteBooking,
         generateInvoice,
         submitReview,
+        updateReview,
         toggleFavorite,
         isFavorite,
         addToCompare,
@@ -1682,6 +1861,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         registerNewTechnician,
         updateTechnicianProfile,
         deleteTechnician,
+        toggleBlockTechnician,
+        adminReportTechnician,
         addTechnicianPortfolio,
         deleteTechnicianPortfolio,
       }}

@@ -65,6 +65,7 @@ export const ProfessionalsPage: React.FC = () => {
   const filteredTechnicians = useMemo(() => {
     return technicians
       .filter((tech) => {
+        if (tech.isBlocked) return false;
         const matchesCategory =
           selectedCategory === 'all' || tech.skills.includes(selectedCategory);
         const matchesDistrict =

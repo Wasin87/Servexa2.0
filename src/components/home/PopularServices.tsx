@@ -28,6 +28,7 @@ import { useApp } from '../../contexts/AppContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { CATEGORY_BANNERS } from '../../pages/ServicesPage';
 import { serviceAcElectricalBanner } from '../../assets/serviceBanners';
+import { toBengaliNumber } from '../../utils/geoUtils';
 
 const iconMap: Record<string, React.ElementType> = {
   Zap,
@@ -56,7 +57,7 @@ const iconMap: Record<string, React.ElementType> = {
 const DEFAULT_BANNER = serviceAcElectricalBanner;
 
 export const PopularServices: React.FC = () => {
-  const { categories } = useApp();
+  const { categories, technicians } = useApp();
   const { isBangla } = useLanguage();
 
   return (
@@ -90,8 +91,18 @@ export const PopularServices: React.FC = () => {
       {/* Grid of Categories - Same Professional Banner Cards as Services Page */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
         {categories.slice(0, 8).map((cat) => {
-          const IconComponent = iconMap[cat.icon] || Wrench;
+          const IconComponent = iconMap[cat.icon];
           const bannerUrl = CATEGORY_BANNERS[cat.id] || DEFAULT_BANNER;
+          const liveProCount = technicians.filter(
+            (tech) =>
+              !tech.isBlocked &&
+              (tech.skills || []).some(
+                (s) =>
+                  s === cat.id ||
+                  s.toLowerCase() === (cat.nameEn || '').toLowerCase() ||
+                  s === cat.nameBn
+              )
+          ).length;
 
           return (
             <Link
@@ -112,7 +123,13 @@ export const PopularServices: React.FC = () => {
 
                 {/* Floating Category Icon Badge */}
                 <div className="absolute bottom-2 left-2 sm:bottom-3 sm:left-3 w-8 h-8 sm:w-11 sm:h-11 rounded-xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md text-orange-600 dark:text-orange-400 flex items-center justify-center shadow-lg border border-orange-500/30 group-hover:bg-orange-600 group-hover:text-white transition-colors">
-                  <IconComponent className="w-4 h-4 sm:w-5 sm:h-5" />
+                  {IconComponent ? (
+                    <IconComponent className="w-4 h-4 sm:w-5 sm:h-5" />
+                  ) : cat.icon && !/^[A-Za-z0-9_]+$/.test(cat.icon) ? (
+                    <span className="text-base sm:text-xl leading-none">{cat.icon}</span>
+                  ) : (
+                    <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
+                  )}
                 </div>
 
                 {/* Emergency / Popular Badges */}
@@ -151,8 +168,8 @@ export const PopularServices: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1 font-bold text-orange-600 dark:text-orange-400 text-[11px] bg-orange-50 dark:bg-orange-950/40 px-2 py-1 rounded-lg border border-orange-500/20">
-                    <span>{cat.activeProfessionals}</span>
+                  <div className="flex items-center gap-1 font-bold text-orange-600 dark:text-orange-400 text-[11px] bg-orange-50 dark:bg-orange-950/40 px-2 py-1 rounded-lg border border-orange-500/20 tabular-nums">
+                    <span>{toBengaliNumber(liveProCount)}</span>
                     <span>{isBangla ? 'জন প্রস্তুত' : 'Pros'}</span>
                   </div>
                 </div>

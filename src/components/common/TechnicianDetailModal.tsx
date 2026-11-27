@@ -74,7 +74,7 @@ export const TechnicianDetailModal: React.FC<TechnicianDetailModalProps> = ({
   if (!isAuthenticated) {
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
+        className="fixed inset-0 z-[10050] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
         onClick={onClose}
       >
         <div
@@ -161,9 +161,9 @@ export const TechnicianDetailModal: React.FC<TechnicianDetailModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-[10050] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
         <div
-          className="relative w-full max-w-4xl bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+          className="relative w-full max-w-4xl bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Top Hero Banner & Profile Header */}

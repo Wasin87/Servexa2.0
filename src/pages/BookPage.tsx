@@ -51,8 +51,9 @@ export const BookPage: React.FC = () => {
   const paramDesc = searchParams.get('desc') || '';
   const paramUrgent = searchParams.get('emergency') === 'true';
 
-  const verifiedTechnicians = technicians.filter(tech => tech.skillVerified || tech.platformVerified);
-  const selectableTechnicians = verifiedTechnicians.length > 0 ? verifiedTechnicians : technicians;
+  const activeTechnicians = technicians.filter(tech => !tech.isBlocked);
+  const verifiedTechnicians = activeTechnicians.filter(tech => tech.skillVerified || tech.platformVerified);
+  const selectableTechnicians = verifiedTechnicians.length > 0 ? verifiedTechnicians : activeTechnicians;
 
   const initialDivision = currentUser?.division || 'Dhaka';
   const initialDistrict = currentUser?.district || currentUser?.city || 'Dhaka';
@@ -388,8 +389,12 @@ export const BookPage: React.FC = () => {
       return;
     }
 
-    if (!selectedTech) {
-      const noTechMsg = isBangla
+    if (!selectedTech || selectedTech.isBlocked) {
+      const noTechMsg = selectedTech?.isBlocked
+        ? isBangla
+          ? 'এই টেকনিশিয়ান অ্যাকাউন্টটি অ্যাডমিন কর্তৃক সাময়িকভাবে ব্লক করা রয়েছে। অনুগ্রহ করে অন্য টেকনিশিয়ান বেছে নিন।'
+          : 'This technician account is temporarily suspended by Admin. Please choose another technician.'
+        : isBangla
         ? 'এই মুহূর্তে কোনো নিবন্ধিত টেকনিশিয়ান পাওয়া যায়নি। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।'
         : 'No registered technicians are available right now. Please try again later.';
       setGateError(noTechMsg);

@@ -679,7 +679,7 @@ export async function requestWithdrawalInFirestore(params: {
   }
 
   const now = new Date().toISOString();
-  const wId = `wdr-${Date.now()}`;
+  const wId = `wdr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const acctNum = payoutAccount.accountNumber || '';
   const masked = acctNum.length > 4 ? `${'*'.repeat(Math.max(0, acctNum.length - 4))}${acctNum.slice(-4)}` : acctNum;
 

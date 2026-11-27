@@ -44,8 +44,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ booking, isOpen, onClo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-6 overflow-hidden">
+    <div className="fixed inset-0 z-[10050] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md max-h-[88vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-6">
         <div className="flex items-center justify-between pb-4 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
             <AlertTriangle className="w-5 h-5 shrink-0" />

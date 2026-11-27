@@ -49,6 +49,7 @@ interface AuthContextType {
   register: (userData: RegisterInput) => Promise<AuthActionResult>;
   logout: () => void;
   updateProfile: (updatedData: Partial<User>) => Promise<boolean>;
+  updateCredentials: (updatedData: Partial<User>) => Promise<{ success: boolean; error?: string }>;
   switchRole: (role: UserRole) => Promise<void>;
 }
 
@@ -380,39 +381,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // Designated Platform Admin check
-    if (emailLower === ADMIN_EMAIL) {
-      if ((password || '') !== 'W@sin1234') {
+    // Designated Platform Admin check (respects Firestore-updated email, phone, and password)
+    const storedAdmin =
+      (await getUserFromFirestore('admin-wasin')) ||
+      (await getUserByEmailFromFirestore(ADMIN_EMAIL));
+    const adminMatchesEmail =
+      storedAdmin?.email?.trim().toLowerCase() === emailLower ||
+      (emailLower === ADMIN_EMAIL && (!storedAdmin || !storedAdmin.email || storedAdmin.email.trim().toLowerCase() === ADMIN_EMAIL));
+    const adminMatchesPhone = !!storedAdmin?.phone && storedAdmin.phone.trim() === identifier;
+
+    if (adminMatchesEmail || adminMatchesPhone) {
+      const expectedAdminPass = storedAdmin?.password || 'W@sin1234';
+      if ((password || '') !== expectedAdminPass) {
         return {
           success: false,
           error: 'ভুল অ্যাডমিন পাসওয়ার্ড! অনুগ্রহ করে সঠিক পাসওয়ার্ড লিখুন।',
         };
       }
 
-      const existingAdmin =
-        (await getUserFromFirestore('admin-wasin')) ||
-        (await getUserByEmailFromFirestore(ADMIN_EMAIL));
-
       const adminUser: User = {
-        id: existingAdmin?.id || 'admin-wasin',
-        name: existingAdmin?.name || 'Wasin Ahmed',
-        email: ADMIN_EMAIL,
-        phone: existingAdmin?.phone || '',
+        id: storedAdmin?.id || 'admin-wasin',
+        name: storedAdmin?.name || 'Wasin Ahmed',
+        email: storedAdmin?.email || ADMIN_EMAIL,
+        phone: storedAdmin?.phone || '',
+        password: storedAdmin?.password || 'W@sin1234',
         role: 'ADMIN',
-        avatar: existingAdmin?.avatar || '',
-        division: existingAdmin?.division || 'Dhaka',
-        district: existingAdmin?.district || 'Dhaka',
-        city: existingAdmin?.city || 'Dhaka',
-        area: existingAdmin?.area || '',
-        address: existingAdmin?.address || '',
-        phoneVerified: existingAdmin?.phoneVerified ?? true,
-        nidVerified: existingAdmin?.nidVerified ?? true,
-        createdAt: existingAdmin?.createdAt || new Date().toISOString().split('T')[0],
+        avatar: storedAdmin?.avatar || '',
+        division: storedAdmin?.division || 'Dhaka',
+        district: storedAdmin?.district || 'Dhaka',
+        city: storedAdmin?.city || 'Dhaka',
+        area: storedAdmin?.area || '',
+        address: storedAdmin?.address || '',
+        phoneVerified: storedAdmin?.phoneVerified ?? true,
+        nidVerified: storedAdmin?.nidVerified ?? true,
+        createdAt: storedAdmin?.createdAt || new Date().toISOString().split('T')[0],
       };
 
       safeCacheActiveUser(adminUser);
       cacheRegisteredUser(adminUser);
-      if (!existingAdmin) {
+      if (!storedAdmin) {
         await saveUserToFirestore(adminUser);
       }
       await ensureServerSession(adminUser);
@@ -428,13 +435,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     if (matchedRegistered) {
-      if (matchedRegistered.password && matchedRegistered.password !== (password || '')) {
-        return {
-          success: false,
-          error: 'ভুল পাসওয়ার্ড! অনুগ্রহ করে রেজিস্ট্রেশনের সময় দেওয়া সঠিক পাসওয়ার্ড লিখুন।',
-        };
-      }
-      // Prefer live Firestore user record so updated profile/avatar from any session is never overwritten by stale local cache
+      // Prefer live Firestore user record first so updated email/phone/password/avatar from any session apply cleanly
       const liveFsUser =
         (await getUserFromFirestore(matchedRegistered.id)) ||
         (matchedRegistered.email
@@ -444,9 +445,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ? {
             ...matchedRegistered,
             ...liveFsUser,
-            password: liveFsUser.password || matchedRegistered.password,
+            password: liveFsUser.password ?? matchedRegistered.password,
           }
         : matchedRegistered;
+
+      if (mergedUser.password && mergedUser.password !== (password || '')) {
+        return {
+          success: false,
+          error: 'ভুল পাসওয়ার্ড! অনুগ্রহ করে সঠিক পাসওয়ার্ড লিখুন।',
+        };
+      }
 
       safeCacheActiveUser(mergedUser);
       cacheRegisteredUser(mergedUser);
@@ -471,7 +479,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (fsUser.password && fsUser.password !== (password || '')) {
         return {
           success: false,
-          error: 'ভুল পাসওয়ার্ড! অনুগ্রহ করে রেজিস্ট্রেশনের সময় দেওয়া সঠিক পাসওয়ার্ড লিখুন।',
+          error: 'ভুল পাসওয়ার্ড! অনুগ্রহ করে সঠিক পাসওয়ার্ড লিখুন।',
         };
       }
       cacheRegisteredUser(fsUser);
@@ -564,10 +572,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void signOut(auth).catch(() => {});
   };
 
-  const updateProfile = async (updatedData: Partial<User>): Promise<boolean> => {
+  const updateCredentials = async (
+    updatedData: Partial<User>
+  ): Promise<{ success: boolean; error?: string }> => {
     const baseUser = currentUserRef.current || currentUser;
-    if (!baseUser) return false;
-    const nextUser: User = { ...baseUser, ...updatedData };
+    if (!baseUser) {
+      return { success: false, error: 'অনুগ্রহ করে পুনরায় লগইন করুন।' };
+    }
+
+    const sanitizedData: Partial<User> = { ...updatedData };
+    if (updatedData.email !== undefined) {
+      const normalizedEmail = updatedData.email.trim().toLowerCase();
+      if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return { success: false, error: 'অনুগ্রহ করে একটি সঠিক ইমেইল ঠিকানা লিখুন।' };
+      }
+      if (normalizedEmail !== (baseUser.email || '').trim().toLowerCase()) {
+        const existingByEmail = await getUserByEmailFromFirestore(normalizedEmail);
+        if (existingByEmail && existingByEmail.id !== baseUser.id && !isLegacyDemoUser(existingByEmail)) {
+          return { success: false, error: 'এই ইমেইলটি ইতিমধ্যে অন্য একটি একাউন্টে ব্যবহৃত হচ্ছে।' };
+        }
+      }
+      sanitizedData.email = normalizedEmail;
+    }
+
+    if (updatedData.phone !== undefined) {
+      sanitizedData.phone = updatedData.phone.trim();
+    }
+
+    if (updatedData.password !== undefined) {
+      if (updatedData.password.length < 6) {
+        return { success: false, error: 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।' };
+      }
+    }
+
+    const nextUser: User = { ...baseUser, ...sanitizedData };
     currentUserRef.current = nextUser;
     safeCacheActiveUser(nextUser);
     cacheRegisteredUser(nextUser);
@@ -575,10 +613,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     pendingProfileWritesRef.current += 1;
     try {
-      return await saveUserToFirestore(nextUser);
+      const saved = await saveUserToFirestore(nextUser);
+      if (!saved) {
+        return {
+          success: false,
+          error: 'ডাটাবেসে তথ্য সংরক্ষণ করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করুন।',
+        };
+      }
+      return { success: true };
     } finally {
       pendingProfileWritesRef.current = Math.max(0, pendingProfileWritesRef.current - 1);
     }
+  };
+
+  const updateProfile = async (updatedData: Partial<User>): Promise<boolean> => {
+    const res = await updateCredentials(updatedData);
+    return res.success;
   };
 
   const switchRole = async (targetRole: UserRole) => {
@@ -606,6 +656,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         updateProfile,
+        updateCredentials,
         switchRole,
       }}
     >

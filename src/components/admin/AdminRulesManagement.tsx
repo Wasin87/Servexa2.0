@@ -1438,7 +1438,7 @@ export const AdminRulesManagement: React.FC = () => {
 
       {/* Confirm Sensitive Rules Modal */}
       {confirmModalOpen && (
-        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+        <div className="fixed inset-0 z-[10050] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 space-y-4">
             <h4 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
@@ -1498,7 +1498,7 @@ export const AdminRulesManagement: React.FC = () => {
 
       {/* Edit Pricing Rule Modal */}
       {editingRule && (
-        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+        <div className="fixed inset-0 z-[10050] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <form
             onSubmit={handleSavePricingRule}
             className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 space-y-4 max-h-[90vh] overflow-y-auto"
@@ -1612,7 +1612,7 @@ export const AdminRulesManagement: React.FC = () => {
 
       {/* Create Category Modal */}
       {showNewCatModal && (
-        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+        <div className="fixed inset-0 z-[10050] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <form onSubmit={handleCreateCategory} className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 space-y-3 text-xs">
             <h4 className="text-sm font-black text-zinc-900 dark:text-white">
               {isBangla ? 'নতুন সার্ভিস ক্যাটাগরি তৈরি করুন' : 'Create Service Category'}
@@ -1666,7 +1666,7 @@ export const AdminRulesManagement: React.FC = () => {
 
       {/* Create Subcategory & Pricing Rule Modal */}
       {showNewSubModal && (
-        <div className="fixed inset-0 z-[3100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+        <div className="fixed inset-0 z-[10050] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <form onSubmit={handleCreateSubcategory} className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 space-y-3 text-xs">
             <h4 className="text-sm font-black text-zinc-900 dark:text-white">
               {isBangla ? 'সাব-ক্যাটাগরি ও মূল্য নীতিমালা যোগ করুন' : 'Add Subcategory & Pricing Rule'}

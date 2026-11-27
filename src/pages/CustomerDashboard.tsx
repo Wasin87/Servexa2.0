@@ -22,7 +22,13 @@ import {
   Sparkles,
   ExternalLink,
   MessageSquare,
-  Map
+  Map,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  X,
+  Edit3
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -55,11 +61,13 @@ export const CustomerDashboard: React.FC = () => {
     addMaintenanceReminder,
     deleteMaintenanceReminder,
     submitReview,
+    updateReview,
     submitWarrantyClaim,
     warranties,
+    categories,
     getUnreadChatCount
   } = useApp();
-  const { currentUser, updateProfile } = useAuth();
+  const { currentUser, updateProfile, updateCredentials } = useAuth();
   const { t, isBangla } = useLanguage();
   const { showToast: showGlobalToast, triggerConfettiBurst } = useToast();
   const navigate = useNavigate();
@@ -86,14 +94,74 @@ export const CustomerDashboard: React.FC = () => {
     showGlobalToast(msg, variant);
   };
 
-  // Review Modal State
+  // Review Modal State (supports both new feedback & editing existing feedback)
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null);
+  const [editingReview, setEditingReview] = useState<Review | null>(null);
   const [ratingWorkQuality, setRatingWorkQuality] = useState(5);
   const [ratingBehavior, setRatingBehavior] = useState(5);
   const [ratingPunctuality, setRatingPunctuality] = useState(5);
   const [ratingPriceFairness, setRatingPriceFairness] = useState(5);
   const [selectedFeedbackTags, setSelectedFeedbackTags] = useState<string[]>(['সময়মতো এসেছেন', 'নিখুঁত কাজ']);
   const [reviewComment, setReviewComment] = useState('');
+
+  const openNewReviewModal = (booking: Booking) => {
+    setEditingReview(null);
+    setRatingWorkQuality(5);
+    setRatingBehavior(5);
+    setRatingPunctuality(5);
+    setRatingPriceFairness(5);
+    setSelectedFeedbackTags(['সময়মতো এসেছেন', 'নিখুঁত কাজ']);
+    setReviewComment('');
+    setReviewBooking(booking);
+  };
+
+  const openEditReviewModal = (rev: Review) => {
+    const matchedBooking = bookings.find((b) => b.id === rev.bookingId);
+    const tech = technicians.find((t) => t.id === rev.technicianId);
+    const fallbackBooking: Booking = matchedBooking || {
+      id: rev.bookingId,
+      bookingNumber: rev.bookingId,
+      customerId: rev.customerId,
+      customerName: rev.customerName,
+      customerPhone: '',
+      customerCity: '',
+      customerArea: '',
+      customerAddress: '',
+      technicianId: rev.technicianId,
+      technicianName: tech?.name || (isBangla ? 'টেকনিশিয়ান' : 'Technician'),
+      technicianPhone: tech?.phone || '',
+      technicianAvatar: tech?.avatar || '',
+      categoryId: '',
+      serviceNameEn: rev.serviceName,
+      serviceNameBn: rev.serviceName,
+      problemDescription: '',
+      mediaUrls: [],
+      date: rev.createdAt,
+      timeSlot: '',
+      urgency: 'normal',
+      estimatedVisitingFee: 0,
+      estimatedLabourMin: 0,
+      estimatedLabourMax: 0,
+      estimatedTotalMin: 0,
+      estimatedTotalMax: 0,
+      status: 'COMPLETED',
+      statusHistory: [],
+      paymentStatus: 'PAID',
+      paymentMethod: 'cash',
+      warrantyDays: 7,
+      reviewed: true,
+      createdAt: rev.createdAt,
+      updatedAt: rev.createdAt,
+    };
+    setEditingReview(rev);
+    setRatingWorkQuality(rev.workQuality || Math.round(rev.overallRating) || 5);
+    setRatingBehavior(rev.behavior || Math.round(rev.overallRating) || 5);
+    setRatingPunctuality(rev.punctuality || Math.round(rev.overallRating) || 5);
+    setRatingPriceFairness(rev.priceFairness || Math.round(rev.overallRating) || 5);
+    setSelectedFeedbackTags(rev.feedbackTags || []);
+    setReviewComment(rev.comment || '');
+    setReviewBooking(fallbackBooking);
+  };
 
   // Warranty Claim Modal State
   const [warrantyBooking, setWarrantyBooking] = useState<Booking | null>(null);
@@ -107,7 +175,12 @@ export const CustomerDashboard: React.FC = () => {
 
   // Profile Edit State
   const [profileName, setProfileName] = useState(currentUser?.name || '');
+  const [profileEmail, setProfileEmail] = useState(currentUser?.email || '');
   const [profilePhone, setProfilePhone] = useState(currentUser?.phone || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [profileAvatar, setProfileAvatar] = useState(currentUser?.avatar || '');
   const [profileDivision, setProfileDivision] = useState(currentUser?.division || '');
   const [profileDistrict, setProfileDistrict] = useState(currentUser?.district || currentUser?.city || '');
@@ -130,6 +203,7 @@ export const CustomerDashboard: React.FC = () => {
   useEffect(() => {
     if (currentUser) {
       setProfileName(currentUser.name || '');
+      setProfileEmail(currentUser.email || '');
       setProfilePhone(currentUser.phone || '');
       setProfileAvatar(currentUser.avatar || '');
       setProfileDivision(currentUser.division || '');
@@ -140,6 +214,7 @@ export const CustomerDashboard: React.FC = () => {
   }, [
     currentUser?.id,
     currentUser?.name,
+    currentUser?.email,
     currentUser?.phone,
     currentUser?.avatar,
     currentUser?.division,
@@ -194,11 +269,36 @@ export const CustomerDashboard: React.FC = () => {
     showToast(isBangla ? 'নতুন রিমাইন্ডার সংরক্ষিত হয়েছে!' : 'Maintenance reminder saved!');
   };
 
-  const handleReviewSubmit = (e: React.FormEvent) => {
+  const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reviewBooking) return;
 
     const overallRating = Number(((ratingWorkQuality + ratingBehavior + ratingPunctuality + ratingPriceFairness) / 4).toFixed(1));
+    const finalComment = reviewComment.trim() || (isBangla ? 'চমৎকার এবং সন্তোষজনক কাজ হয়েছে।' : 'Great and satisfactory work.');
+
+    if (editingReview) {
+      await updateReview(editingReview.id, {
+        customerName: currentUser?.name || editingReview.customerName,
+        customerAvatar: currentUser?.avatar || editingReview.customerAvatar,
+        overallRating,
+        workQuality: ratingWorkQuality,
+        behavior: ratingBehavior,
+        punctuality: ratingPunctuality,
+        priceFairness: ratingPriceFairness,
+        feedbackTags: selectedFeedbackTags,
+        comment: finalComment,
+      });
+      setEditingReview(null);
+      setReviewBooking(null);
+      setReviewComment('');
+      triggerConfettiBurst();
+      showToast(
+        isBangla
+          ? 'আপনার ফিডব্যাক ও রেটিং সফলভাবে আপডেট করা হয়েছে!'
+          : 'Your feedback and rating have been updated successfully!'
+      );
+      return;
+    }
 
     submitReview({
       bookingId: reviewBooking.id,
@@ -212,7 +312,7 @@ export const CustomerDashboard: React.FC = () => {
       punctuality: ratingPunctuality,
       priceFairness: ratingPriceFairness,
       feedbackTags: selectedFeedbackTags,
-      comment: reviewComment.trim() || (isBangla ? 'চমৎকার এবং সন্তোষজনক কাজ হয়েছে।' : 'Great and satisfactory work.'),
+      comment: finalComment,
       serviceName: isBangla ? (reviewBooking.serviceNameBn || reviewBooking.serviceNameEn) : (reviewBooking.serviceNameEn || reviewBooking.serviceNameBn)
     });
 
@@ -313,10 +413,33 @@ export const CustomerDashboard: React.FC = () => {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setProfileError(null);
+
+    if (newPassword || confirmPassword) {
+      if (newPassword.length < 6) {
+        const msg = isBangla
+          ? 'নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।'
+          : 'New password must be at least 6 characters.';
+        setProfileError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        const msg = isBangla
+          ? 'নতুন পাসওয়ার্ড ও কনফার্ম পাসওয়ার্ড মিলছে না।'
+          : 'New password and confirm password do not match.';
+        setProfileError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+    }
+
     setSavingProfile(true);
     const updatedFields = {
       name: profileName.trim(),
+      email: profileEmail.trim().toLowerCase(),
       phone: profilePhone.trim(),
+      ...(newPassword ? { password: newPassword } : {}),
       avatar: profileAvatar.trim(),
       division: profileDivision,
       district: profileDistrict,
@@ -324,18 +447,19 @@ export const CustomerDashboard: React.FC = () => {
       area: profileArea,
       address: profileAddress.trim()
     };
-    const saved = await updateProfile(updatedFields);
+    const res = await updateCredentials(updatedFields);
     setSavingProfile(false);
-    if (!saved) {
-      showToast(
-        isBangla
-          ? 'প্রোফাইল তথ্য ডাটাবেসে সংরক্ষণ করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করুন।'
-          : 'Could not save profile to database. Check your connection.',
-        'error'
-      );
+    if (!res.success) {
+      const msg = res.error || (isBangla
+        ? 'প্রোফাইল তথ্য ডাটাবেসে সংরক্ষণ করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করুন।'
+        : 'Could not save profile to database. Check your connection.');
+      setProfileError(msg);
+      showToast(msg, 'error');
       return;
     }
 
+    setNewPassword('');
+    setConfirmPassword('');
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 3500);
 
@@ -347,8 +471,8 @@ export const CustomerDashboard: React.FC = () => {
       triggerConfettiBurst();
       showToast(
         isBangla
-          ? 'অভিনন্দন! আপনার গ্রাহক প্রোফাইল ১০০% সম্পূর্ণ হয়েছে — এখন সার্ভিস বুক করতে পারবেন!'
-          : 'Congratulations! Your customer profile is 100% complete — you can now book services!'
+          ? 'অভিনন্দন! আপনার গ্রাহক প্রোফাইল, ইমেইল ও নিরাপত্তা তথ্য সফলভাবে আপডেট হয়েছে!'
+          : 'Customer profile, contact & security details updated successfully!'
       );
     } else {
       showToast(
@@ -810,7 +934,7 @@ export const CustomerDashboard: React.FC = () => {
 
                         {isCompleted && !booking.reviewed && (
                           <button
-                            onClick={() => setReviewBooking(booking)}
+                            onClick={() => openNewReviewModal(booking)}
                             className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold hover:bg-amber-500/25 transition-colors flex items-center gap-1 cursor-pointer"
                           >
                             <Star className="w-3.5 h-3.5 fill-current" />
@@ -821,16 +945,29 @@ export const CustomerDashboard: React.FC = () => {
                         {isCompleted && booking.reviewed && (() => {
                           const existingReview = reviews.find(r => r.bookingId === booking.id);
                           return (
-                            <span className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                              <span>
-                                {existingReview
-                                  ? `${existingReview.overallRating}★ ${isBangla ? 'ফিডব্যাক প্রদত্ত' : 'Feedback Given'}`
-                                  : isBangla
-                                    ? 'ফিডব্যাক প্রদত্ত'
-                                    : 'Feedback Given'}
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                                <span>
+                                  {existingReview
+                                    ? `${existingReview.overallRating}★ ${isBangla ? 'ফিডব্যাক প্রদত্ত' : 'Feedback Given'}`
+                                    : isBangla
+                                      ? 'ফিডব্যাক প্রদত্ত'
+                                      : 'Feedback Given'}
+                                </span>
                               </span>
-                            </span>
+                              {existingReview && (
+                                <button
+                                  type="button"
+                                  onClick={() => openEditReviewModal(existingReview)}
+                                  className="px-2.5 py-1.5 rounded-xl border border-amber-400/50 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold hover:bg-amber-500/20 transition-colors flex items-center gap-1 cursor-pointer"
+                                  title={isBangla ? 'ফিডব্যাক এডিট করুন' : 'Edit Feedback'}
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>{isBangla ? 'এডিট' : 'Edit'}</span>
+                                </button>
+                              )}
+                            </div>
                           );
                         })()}
 
@@ -912,7 +1049,7 @@ export const CustomerDashboard: React.FC = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setReviewBooking(b)}
+                      onClick={() => openNewReviewModal(b)}
                       className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-black text-xs shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <Star className="w-4 h-4 fill-current" />
@@ -939,34 +1076,53 @@ export const CustomerDashboard: React.FC = () => {
               {customerReviews.map(rev => {
                 const tech = technicians.find(item => item.id === rev.technicianId);
                 return (
-                  <div key={rev.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="font-black text-xs text-zinc-900 dark:text-white">{rev.serviceName}</div>
-                        <div className="text-[11px] text-zinc-500">
-                          {isBangla ? 'টেকনিশিয়ান:' : 'Technician:'}{' '}
-                          <span className="font-bold text-orange-600">{tech?.name || (isBangla ? 'টেকনিশিয়ান' : 'Technician')}</span> · {rev.createdAt}
+                  <div key={rev.id} className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-3 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-black text-xs text-zinc-900 dark:text-white">{rev.serviceName}</span>
+                            {rev.isEdited && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-blue-400 text-[10px] font-bold">
+                                {isBangla ? 'সম্পাদিত' : 'Edited'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-zinc-500">
+                            {isBangla ? 'টেকনিশিয়ান:' : 'Technician:'}{' '}
+                            <span className="font-bold text-orange-600">{tech?.name || (isBangla ? 'টেকনিশিয়ান' : 'Technician')}</span> · {rev.createdAt}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 font-black text-xs flex items-center gap-1">
+                            <Star className="w-3.5 h-3.5 fill-current" />
+                            <span>{rev.overallRating}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => openEditReviewModal(rev)}
+                            className="px-2.5 py-1 rounded-xl border border-orange-500/35 bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 font-black text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>{isBangla ? 'এডিট' : 'Edit'}</span>
+                          </button>
                         </div>
                       </div>
-                      <span className="px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 font-black text-xs flex items-center gap-1">
-                        <Star className="w-3.5 h-3.5 fill-current" />
-                        <span>{rev.overallRating}</span>
-                      </span>
+
+                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-stone-50 dark:bg-zinc-800/70 p-3 rounded-2xl italic border border-zinc-200 dark:border-zinc-700/60">
+                        "{rev.comment}"
+                      </p>
+
+                      {rev.feedbackTags && rev.feedbackTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {rev.feedbackTags.map((tag, i) => (
+                            <span key={i} className="px-2 py-0.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[10px] font-bold">
+                              ✓ {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-
-                    <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-stone-50 dark:bg-zinc-800/70 p-3 rounded-2xl italic border border-zinc-200 dark:border-zinc-700/60">
-                      "{rev.comment}"
-                    </p>
-
-                    {rev.feedbackTags && rev.feedbackTags.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {rev.feedbackTags.map((tag, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[10px] font-bold">
-                            ✓ {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
 
                     <div className="grid grid-cols-4 gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-center text-[10px] text-zinc-500">
                       <div>{isBangla ? 'কাজের মান:' : 'Quality:'} <span className="font-black text-zinc-800 dark:text-zinc-200">{rev.workQuality}★</span></div>
@@ -1032,10 +1188,11 @@ export const CustomerDashboard: React.FC = () => {
                     onChange={(e) => setRemCategory(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
                   >
-                    <option value="ac_repair">{isBangla ? 'এসি সার্ভিসিং' : 'AC Repair & Servicing'}</option>
-                    <option value="plumbing">{isBangla ? 'প্লাম্বিং ও পাইপলাইন' : 'Plumbing & Pipeline'}</option>
-                    <option value="electrical">{isBangla ? 'ইলেকট্রিক্যাল ও শর্ট সার্কিট' : 'Electrical & Wiring'}</option>
-                    <option value="appliance">{isBangla ? 'ফ্রিজ ও ওয়াশিং মেশিন' : 'Fridge & Washing Machine'}</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {isBangla ? cat.nameBn : cat.nameEn}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1413,7 +1570,13 @@ export const CustomerDashboard: React.FC = () => {
 
           {profileSaved && (
             <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold animate-in fade-in">
-              ✅ {isBangla ? 'প্রোফাইল তথ্য সফলভাবে সংরক্ষিত হয়েছে!' : 'Profile updated successfully!'}
+              ✅ {isBangla ? 'প্রোফাইল, ইমেইল ও নিরাপত্তা তথ্য সফলভাবে সংরক্ষিত হয়েছে!' : 'Profile, contact & security info updated successfully!'}
+            </div>
+          )}
+
+          {profileError && (
+            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-bold animate-in fade-in">
+              ⚠️ {profileError}
             </div>
           )}
 
@@ -1435,6 +1598,7 @@ export const CustomerDashboard: React.FC = () => {
                 </label>
                 <input
                   type="text"
+                  required
                   value={profileName}
                   onChange={(e) => setProfileName(e.target.value)}
                   placeholder={isBangla ? 'আপনার পূর্ণ নাম লিখুন' : 'Enter your full name'}
@@ -1453,6 +1617,67 @@ export const CustomerDashboard: React.FC = () => {
                   placeholder={isBangla ? '০১XXXXXXXXX' : '01XXXXXXXXX'}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-medium"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="font-bold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-orange-500" />
+                  <span>{isBangla ? 'লগইন ইমেইল ঠিকানা:' : 'Login Email Address:'}</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={profileEmail}
+                  onChange={(e) => setProfileEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 font-medium"
+                />
+              </div>
+            </div>
+
+            {/* Password Change Card */}
+            <div className="p-4 rounded-2xl bg-stone-50/80 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-black text-zinc-800 dark:text-zinc-200">
+                  <Lock className="w-3.5 h-3.5 text-orange-500" />
+                  <span>{isBangla ? 'লগইন পাসওয়ার্ড পরিবর্তন (ঐচ্ছিক)' : 'Change Login Password (Optional)'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="text-[11px] font-bold text-orange-600 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showPassword ? (isBangla ? 'লুকান' : 'Hide') : (isBangla ? 'দেখুন' : 'Show')}</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-zinc-600 dark:text-zinc-400 block mb-1">
+                    {isBangla ? 'নতুন পাসওয়ার্ড:' : 'New Password:'}
+                  </label>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder={isBangla ? 'পরিবর্তন করতে চাইলে লিখুন (কমপক্ষে ৬ অক্ষর)' : 'Min 6 chars (leave blank to keep)'}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-zinc-600 dark:text-zinc-400 block mb-1">
+                    {isBangla ? 'নতুন পাসওয়ার্ড নিশ্চিত করুন:' : 'Confirm New Password:'}
+                  </label>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder={isBangla ? 'পুনরায় নতুন পাসওয়ার্ড লিখুন' : 'Re-enter new password'}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-medium"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1552,17 +1777,28 @@ export const CustomerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Review Modal */}
+      {/* Review Modal (Create & Edit) */}
       {reviewBooking && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between border-b pb-3 border-zinc-100 dark:border-zinc-800">
+        <div className="fixed inset-0 z-[10050] bg-black/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-1.5">
                 <Star className="w-4 h-4 text-amber-500 fill-current" />
-                <span>{isBangla ? 'কাজের ফিডব্যাক ও ৫-স্টার রেটিং প্রদান' : 'Rate & Feedback Technician'}</span>
+                <span>
+                  {editingReview
+                    ? isBangla
+                      ? 'প্রদত্ত ফিডব্যাক ও রেটিং এডিট করুন'
+                      : 'Edit Your Feedback & Rating'
+                    : isBangla
+                    ? 'কাজের ফিডব্যাক ও ৫-স্টার রেটিং প্রদান'
+                    : 'Rate & Feedback Technician'}
+                </span>
               </h3>
-              <button onClick={() => setReviewBooking(null)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">✕</button>
+              <button type="button" onClick={() => { setReviewBooking(null); setEditingReview(null); }} className="p-1.5 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
             </div>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
 
             <div className="p-3 rounded-2xl bg-orange-50/70 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/40 flex items-center justify-between text-xs">
               <div>
@@ -1651,72 +1887,83 @@ export const CustomerDashboard: React.FC = () => {
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setReviewBooking(null)} className="px-4 py-2 rounded-xl border text-xs font-bold cursor-pointer">
-                  {isBangla ? 'বাতিল' : 'Cancel'}
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <button type="button" onClick={() => { setReviewBooking(null); setEditingReview(null); }} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold cursor-pointer">
+                  {isBangla ? 'বন্ধ করুন' : 'Close'}
                 </button>
                 <button type="submit" className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shadow-md cursor-pointer">
-                  {isBangla ? 'ফিডব্যাক জমা দিন' : 'Submit Feedback'}
+                  {editingReview
+                    ? isBangla
+                      ? 'আপডেট সংরক্ষণ করুন'
+                      : 'Save Updated Feedback'
+                    : isBangla
+                    ? 'ফিডব্যাক জমা দিন'
+                    : 'Submit Feedback'}
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}
 
       {/* Warranty Claim Modal */}
       {warrantyBooking && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between border-b pb-3 border-zinc-100 dark:border-zinc-800">
+        <div className="fixed inset-0 z-[10050] bg-black/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+          <div className="w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in fade-in">
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="font-black text-sm text-zinc-900 dark:text-white flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-rose-500" />
                 <span>{isBangla ? '৭-দিনের ফ্রি ওয়ারেন্টি ক্লেইম সাবমিট' : 'Submit 7-Day Warranty Claim'}</span>
               </h3>
-              <button onClick={() => setWarrantyBooking(null)} className="text-zinc-400 hover:text-zinc-600">✕</button>
+              <button type="button" onClick={() => setWarrantyBooking(null)} className="p-1.5 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="text-xs text-zinc-600 dark:text-zinc-400">
-              {isBangla ? 'বুকিং নং:' : 'Booking No:'}{' '}
-              <span className="font-bold text-orange-600 font-mono">#{warrantyBooking.bookingNumber}</span> ·{' '}
-              {isBangla ? 'সার্ভিস:' : 'Service:'}{' '}
-              <span className="font-bold">{isBangla ? warrantyBooking.serviceNameBn : warrantyBooking.serviceNameEn}</span>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+              <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                {isBangla ? 'বুকিং নং:' : 'Booking No:'}{' '}
+                <span className="font-bold text-orange-600 font-mono">#{warrantyBooking.bookingNumber}</span> ·{' '}
+                {isBangla ? 'সার্ভিস:' : 'Service:'}{' '}
+                <span className="font-bold">{isBangla ? warrantyBooking.serviceNameBn : warrantyBooking.serviceNameEn}</span>
+              </div>
+
+              <form onSubmit={handleWarrantySubmit} className="space-y-3 text-xs">
+                <div>
+                  <label className="font-bold block mb-1 text-zinc-700 dark:text-zinc-300">
+                    {isBangla ? 'সমস্যার বিশদ বিবরণ লিখে জানান:' : 'Describe the recurring issue in detail:'}
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={warrantyIssue}
+                    onChange={(e) => setWarrantyIssue(e.target.value)}
+                    placeholder={
+                      isBangla
+                        ? 'কাজ করার পর আবার পাইপ থেকে পানি চুইয়ে পড়ছে বা এসি কুলিং কমে গেছে...'
+                        : 'e.g. Water is leaking from the pipe again or AC cooling dropped...'
+                    }
+                    className="w-full p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
+                  />
+                </div>
+
+                <div className="p-3 rounded-xl bg-orange-500/10 text-[11px] text-zinc-700 dark:text-zinc-300">
+                  {isBangla
+                    ? '💡 ওয়ারেন্টি ক্লেইম সাবমিটের পর অ্যাডমিন টিম অবিলম্বে পর্যালোচনা করে ফ্রি রি-ডিসপ্যাচ অনুমোদন করবে।'
+                    : '💡 Once submitted, the admin team will review and approve a free technician re-dispatch immediately.'}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                  <button type="button" onClick={() => setWarrantyBooking(null)} className="px-4 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold cursor-pointer">
+                    {isBangla ? 'বন্ধ করুন' : 'Close'}
+                  </button>
+                  <button type="submit" className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md cursor-pointer">
+                    {isBangla ? 'ক্লেইম সাবমিট করুন' : 'Submit Claim'}
+                  </button>
+                </div>
+              </form>
             </div>
-
-            <form onSubmit={handleWarrantySubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold block mb-1 text-zinc-700 dark:text-zinc-300">
-                  {isBangla ? 'সমস্যার বিশদ বিবরণ লিখে জানান:' : 'Describe the recurring issue in detail:'}
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  value={warrantyIssue}
-                  onChange={(e) => setWarrantyIssue(e.target.value)}
-                  placeholder={
-                    isBangla
-                      ? 'কাজ করার পর আবার পাইপ থেকে পানি চুইয়ে পড়ছে বা এসি কুলিং কমে গেছে...'
-                      : 'e.g. Water is leaking from the pipe again or AC cooling dropped...'
-                  }
-                  className="w-full p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800"
-                />
-              </div>
-
-              <div className="p-3 rounded-xl bg-orange-500/10 text-[11px] text-zinc-700 dark:text-zinc-300">
-                {isBangla
-                  ? '💡 ওয়ারেন্টি ক্লেইম সাবমিটের পর অ্যাডমিন টিম অবিলম্বে পর্যালোচনা করে ফ্রি রি-ডিসপ্যাচ অনুমোদন করবে।'
-                  : '💡 Once submitted, the admin team will review and approve a free technician re-dispatch immediately.'}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setWarrantyBooking(null)} className="px-4 py-2 rounded-xl border text-xs font-bold">
-                  {isBangla ? 'বাতিল' : 'Cancel'}
-                </button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-rose-600 text-white font-bold text-xs shadow-md">
-                  {isBangla ? 'ক্লেইম সাবমিট করুন' : 'Submit Claim'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

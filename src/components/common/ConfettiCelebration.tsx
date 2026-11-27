@@ -44,19 +44,27 @@ export const ConfettiCelebration: React.FC<ConfettiCelebrationProps> = ({ active
     canvas.height = window.innerHeight;
 
     const particles: Particle[] = [];
-    const total = 130;
+    const total = 165;
 
     for (let i = 0; i < total; i++) {
-      const sideOrigin = i % 2 === 0 ? canvas.width * 0.25 : canvas.width * 0.75;
+      const cannon = i % 3;
+      const originX =
+        cannon === 0
+          ? canvas.width * 0.22
+          : cannon === 1
+          ? canvas.width * 0.5
+          : canvas.width * 0.78;
+      const originY =
+        cannon === 1 ? canvas.height * 0.55 : canvas.height * 0.38;
       particles.push({
-        x: sideOrigin + (Math.random() - 0.5) * 160,
-        y: canvas.height * 0.35 + (Math.random() - 0.5) * 60,
-        vx: (Math.random() - 0.5) * 14,
-        vy: Math.random() * -12 - 3,
-        size: Math.random() * 7 + 5,
+        x: originX + (Math.random() - 0.5) * 140,
+        y: originY + (Math.random() - 0.5) * 60,
+        vx: (Math.random() - 0.5) * 16,
+        vy: Math.random() * -14 - 4,
+        size: Math.random() * 8 + 5,
         color: COLORS[Math.floor(Math.random() * COLORS.length)],
         rotation: Math.random() * Math.PI * 2,
-        vRot: (Math.random() - 0.5) * 0.25,
+        vRot: (Math.random() - 0.5) * 0.28,
         opacity: 1
       });
     }
@@ -108,7 +116,7 @@ export const ConfettiCelebration: React.FC<ConfettiCelebrationProps> = ({ active
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 z-[5000] pointer-events-none w-full h-full"
+      className="fixed inset-0 z-[10100] pointer-events-none w-full h-full"
       aria-hidden="true"
     />
   );

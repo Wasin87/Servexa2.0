@@ -24,10 +24,11 @@ export const SearchPage: React.FC = () => {
 
   const matchedTechs = technicians.filter(
     (tech) =>
-      tech.name.toLowerCase().includes(query.toLowerCase()) ||
-      tech.skills.some((s) =>
-        getCategoryName(s).toLowerCase().includes(query.toLowerCase())
-      )
+      !tech.isBlocked &&
+      (tech.name.toLowerCase().includes(query.toLowerCase()) ||
+        tech.skills.some((s) =>
+          getCategoryName(s).toLowerCase().includes(query.toLowerCase())
+        ))
   );
 
   const matchedCategories = categories.filter(
